@@ -9,8 +9,9 @@ venv/
 ENV/
 .venv
 
-# Streamlit
-.streamlit/
+# Streamlit (permitir config.toml)
+.streamlit/*
+!.streamlit/config.toml
 
 # Archivos de proyecto (no subir los PDFs y carpetas de proyectos)
 *.pdf
