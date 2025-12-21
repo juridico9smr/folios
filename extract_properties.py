@@ -51,9 +51,12 @@ def extract_properties_from_pdf(pdf_text):
     lines = pdf_text.split('\n')
     
     # Patrón para detectar inicio de una propiedad: numero -> folio : o numero -> folio -
+    # También maneja casos con puntos: numero -> folio. propiedad o numero -> folio..propiedad
     # También maneja casos donde el folio y la propiedad están concatenados (ej: "230510APTO")
     # Usamos dos patrones: uno para formato normal y otro para formato concatenado
-    pattern_folio_normal = r'(\d+)\s*->\s*(\d+)\s*[:-]\s*(.*)'
+    # El patrón normal acepta: :, -, ., o espacios después del folio
+    # Nota: el guión debe estar al final o escapado en la clase de caracteres
+    pattern_folio_normal = r'(\d+)\s*->\s*(\d+)\s*[\.:\s-]+\s*(.*)'
     
     def extract_concatenated_folio(line):
         """
@@ -382,7 +385,11 @@ def extract_properties_from_pdf(pdf_text):
         property_name = re.sub(r'\s+', ' ', property_name)
         
         # Remover puntos y guiones al final si existen (con espacios antes)
-        property_name = re.sub(r'\s*[-.]+\s*$', '', property_name).strip()
+        # PERO mantener el guión si es parte de una palabra (ej: "ETAPA -" o "PISO -")
+        # Solo remover si hay múltiples guiones/puntos o si está claramente separado
+        # Si termina con "ETAPA -", "PISO -", etc., mantener el guión
+        if not re.search(r'\b(ETAPA|PISO|TORRE|APARTAMENTO|LOCAL|DEPOSITO|PARQUEADERO|BODEGA|OFICINA|LOTE|MANZANA)\s+-\s*$', property_name, re.IGNORECASE):
+            property_name = re.sub(r'\s*[-.]+\s*$', '', property_name).strip()
         
         # Remover guiones al inicio si existen (como en "- APARTAMENTO...")
         property_name = re.sub(r'^\s*[-]+\s*', '', property_name).strip()
@@ -491,6 +498,138 @@ def format_output(property_data, output_format='txt'):
             output_lines.append(f"{property_name} {circulo}-{folio}")
     
     return output_lines
+
+
+def get_oauth_credentials(client_id, client_secret, redirect_uri, token=None):
+    """
+    Obtiene credenciales OAuth 2.0 para Google.
+    
+    Args:
+        client_id: Client ID de OAuth 2.0
+        client_secret: Client Secret de OAuth 2.0
+        redirect_uri: URI de redirección
+        token: Token existente (opcional)
+        
+    Returns:
+        google.oauth2.credentials.Credentials: Credenciales OAuth
+    """
+    try:
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import Flow
+        import os
+    except ImportError:
+        raise ImportError("google-auth-oauthlib debe estar instalado. Ejecuta: pip install google-auth-oauthlib")
+    
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
+    
+    if token:
+        # Usar token existente
+        return Credentials.from_authorized_user_info(token, scopes=scopes)
+    else:
+        # Crear flow para autenticación
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [redirect_uri]
+                }
+            },
+            scopes=scopes,
+            redirect_uri=redirect_uri
+        )
+        return flow
+
+
+def create_google_sheet(property_data, title="Extractor de Propiedades", credentials=None):
+    """
+    Crea un Google Sheet público y editable con los datos de propiedades.
+    
+    Args:
+        property_data: Lista de tuplas (property_name, circulo, folio)
+        title: Título del spreadsheet
+        credentials: Credenciales OAuth o Service Account (opcional)
+        
+    Returns:
+        str: URL del Google Sheet creado
+        
+    Raises:
+        Exception: Si hay un error al crear el sheet
+    """
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+        from google.oauth2.credentials import Credentials as OAuthCredentials
+        import json
+        import os
+    except ImportError:
+        raise ImportError("gspread y google-auth deben estar instalados. Ejecuta: pip install gspread google-auth")
+    
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
+    
+    # Si se proporcionan credenciales OAuth, usarlas
+    if credentials and isinstance(credentials, OAuthCredentials):
+        client = gspread.authorize(credentials)
+    else:
+        # Usar Service Account (método anterior)
+        credentials_path = os.path.join(os.path.dirname(__file__), 'google_credentials.json')
+        
+        if os.path.exists(credentials_path):
+            with open(credentials_path, 'r') as f:
+                creds_dict = json.load(f)
+        else:
+            creds_dict = {
+                "type": "service_account",
+                "project_id": "TU_PROJECT_ID",
+                "private_key_id": "TU_PRIVATE_KEY_ID",
+                "private_key": "-----BEGIN PRIVATE KEY-----\nTU_PRIVATE_KEY_AQUI\n-----END PRIVATE KEY-----\n",
+                "client_email": "tu-service-account@tu-project.iam.gserviceaccount.com",
+                "client_id": "TU_CLIENT_ID",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/tu-service-account%40tu-project.iam.gserviceaccount.com"
+            }
+            
+            if creds_dict["project_id"] == "TU_PROJECT_ID":
+                raise ValueError(
+                    "Credenciales de Google no configuradas.\n"
+                    "Opción 1: Crea un archivo 'google_credentials.json' con tus credenciales.\n"
+                    "Opción 2: Autentícate usando OAuth 2.0 en la aplicación."
+                )
+        
+        credentials = ServiceAccountCredentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(credentials)
+    
+    # Crear nuevo spreadsheet
+    spreadsheet = client.create(title)
+    
+    # Obtener la primera hoja
+    worksheet = spreadsheet.sheet1
+    
+    # Preparar datos: headers y filas
+    headers = ["Inmueble", "folio", "EP", "escritura link", "paginas"]
+    worksheet.append_row(headers)
+    
+    # Agregar datos
+    for property_name, circulo, folio in property_data:
+        row = [property_name, f"{circulo}-{folio}", "", "", ""]
+        worksheet.append_row(row)
+    
+    # Hacer el spreadsheet público y editable por todos
+    spreadsheet.share('', perm_type='anyone', role='writer')
+    
+    # Retornar la URL
+    return spreadsheet.url
+
 
 # ============================================================================
 # CONFIGURACIÓN: Puedes quemar el nombre del proyecto aquí si prefieres
