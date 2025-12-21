@@ -78,11 +78,12 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
         try:
             with st.spinner("Procesando archivos..."):
                 # Validar que haya folios en el formato esperado
-                folio_pattern = r'(\d+)-(\d+)'
+                # Acepta formatos como: 176-250064 o 51N-0998349
+                folio_pattern = r'(\d+[A-Z]?)-(\d+)'
                 matches = re.findall(folio_pattern, matriculas_text)
                 
                 if not matches:
-                    st.error("❌ No se encontraron folios en el formato esperado (ej: 176-250064)")
+                    st.error("❌ No se encontraron folios en el formato esperado (ej: 176-250064 o 51N-0998349)")
                     st.stop()
                 
                 # Leer PDF
