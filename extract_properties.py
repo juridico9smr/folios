@@ -94,6 +94,8 @@ def extract_properties_from_pdf(pdf_text):
                 r'HASTA LA FECHA Y HORA',
                 r'Certificado generado con el Pin No:',
                 r'Nro Matrícula:',
+                r'SALVEDADES:',
+                r'Información Anterior o Corregida',
             ]
             
             def is_footer_or_header(line):
@@ -108,35 +110,50 @@ def extract_properties_from_pdf(pdf_text):
                 """Verifica si una propiedad parece estar incompleta"""
                 # Palabras que sugieren que la propiedad continúa
                 incomplete_indicators = [
-                    r'\bEN\s*$',      # Termina con "EN"
-                    r'\bEN EL\s*$',   # Termina con "EN EL"
-                    r'\bEN LA\s*$',   # Termina con "EN LA"
-                    r'\bEN LOS\s*$',  # Termina con "EN LOS"
-                    r'\bEN LAS\s*$',  # Termina con "EN LAS"
-                    r'\bEL\s*$',      # Termina con "EL"
-                    r'\bDE\s*$',      # Termina con "DE"
-                    r'\bDEL\s*$',     # Termina con "DEL"
-                    r'\bLA\s*$',      # Termina con "LA"
-                    r'\bLAS\s*$',     # Termina con "LAS"
-                    r'\bLOS\s*$',     # Termina con "LOS"
-                    r'\bUN\s*$',      # Termina con "UN"
-                    r'\bUNA\s*$',     # Termina con "UNA"
-                    r'-\s*$',         # Termina con guión
+                    r'\bEN\s*$',           # Termina con "EN"
+                    r'\bEN EL\s*$',        # Termina con "EN EL"
+                    r'\bEN LA\s*$',        # Termina con "EN LA"
+                    r'\bEN LOS\s*$',       # Termina con "EN LOS"
+                    r'\bEN LAS\s*$',       # Termina con "EN LAS"
+                    r'\bEL\s*$',           # Termina con "EL"
+                    r'\bDE\s*$',           # Termina con "DE"
+                    r'\bDEL\s*$',          # Termina con "DEL"
+                    r'\bLA\s*$',           # Termina con "LA"
+                    r'\bLAS\s*$',          # Termina con "LAS"
+                    r'\bLOS\s*$',          # Termina con "LOS"
+                    r'\bUN\s*$',           # Termina con "UN"
+                    r'\bUNA\s*$',          # Termina con "UNA"
+                    r'\bPISO\s*$',         # Termina con "PISO" (sin número, ej: "PISO DOS")
+                    r'\bTORRE\s*$',        # Termina con "TORRE" (sin número)
+                    r'\bAPARTAMENTO\s*$',   # Termina con "APARTAMENTO" (sin número)
+                    r'\bLOCAL\s*$',        # Termina con "LOCAL" (sin número)
+                    r'\bDEPOSITO\s*$',     # Termina con "DEPOSITO" (sin número)
+                    r'\bPARQUEADERO\s*$',   # Termina con "PARQUEADERO" (sin número)
+                    r'-\s*$',              # Termina con guión
                 ]
                 for pattern in incomplete_indicators:
                     if re.search(pattern, property_text, re.IGNORECASE):
                         return True
                 return False
             
-            def looks_like_continuation(line):
+            def looks_like_continuation(line, previous_text=''):
                 """Verifica si una línea parece ser continuación de una propiedad"""
                 line_upper = line.upper().strip()
                 if not line_upper:
                     return False
                 
+                # Si la línea anterior termina con "PISO" y esta línea tiene números o palabras ordinales, es continuación
+                if previous_text:
+                    prev_upper = previous_text.upper()
+                    if re.search(r'\bPISO\s*$', prev_upper):
+                        # Si la línea actual tiene números ordinales o números, es continuación
+                        if re.search(r'^(PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO|SEXTO|SEPTIMO|OCTAVO|NOVENO|DECIMO|UNO|DOS|TRES|CUATRO|CINCO|SEIS|SIETE|OCHO|NUEVE|DIEZ|\d+)', line_upper):
+                            return True
+                
                 # Patrones que indican continuación de propiedad
                 continuation_patterns = [
                     r'^(PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO|SEXTO|SEPTIMO|OCTAVO|NOVENO|DECIMO)\s+PISO',  # "QUINTO PISO"
+                    r'^(UNO|DOS|TRES|CUATRO|CINCO|SEIS|SIETE|OCHO|NUEVE|DIEZ)\s*-',  # "DOS -" después de "PISO"
                     r'^\d+\s+PISO',  # "5 PISO"
                     r'^PISO\s+\d+',  # "PISO 5"
                     r'^TORRE\s+\d+',  # "TORRE 1"
@@ -155,9 +172,12 @@ def extract_properties_from_pdf(pdf_text):
                     if re.search(pattern, line_upper):
                         return True
                 
-                # Si la línea es muy corta y tiene palabras comunes de propiedades, probablemente es continuación
-                if len(line_upper.split()) <= 5:
-                    common_words = ['PISO', 'TORRE', 'APARTAMENTO', 'LOCAL', 'DEPOSITO', 'PARQUEADERO', 'UBICADO']
+                # Si la línea es muy corta (1-3 palabras) y tiene palabras comunes de propiedades, probablemente es continuación
+                words = line_upper.split()
+                if len(words) <= 3:
+                    common_words = ['PISO', 'TORRE', 'APARTAMENTO', 'LOCAL', 'DEPOSITO', 'PARQUEADERO', 'UBICADO', 
+                                   'PRIMER', 'SEGUNDO', 'TERCER', 'CUARTO', 'QUINTO', 'SEXTO', 'SEPTIMO', 'OCTAVO', 'NOVENO', 'DECIMO',
+                                   'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ']
                     if any(word in line_upper for word in common_words):
                         return True
                 
@@ -217,22 +237,27 @@ def extract_properties_from_pdf(pdf_text):
                 
                 # Si la línea tiene contenido y no es footer/header
                 if next_line:
-                    # Si parece continuación de una propiedad incompleta, agregarla
-                    if is_incomplete or looks_like_continuation(next_line) or not property_parts:
+                    current_property = ' '.join(property_parts)
+                    
+                    # Si la propiedad está incompleta o parece continuación, agregarla
+                    if is_incomplete or looks_like_continuation(next_line, current_property) or not property_parts:
                         property_parts.append(next_line)
                         lines_read += 1
-                        is_incomplete = False  # Resetear, ya agregamos contenido
+                        # Actualizar estado de incompletitud
+                        updated_property = ' '.join(property_parts)
+                        is_incomplete = looks_incomplete(updated_property)
                     else:
                         # Si no parece continuación y ya tenemos contenido, verificar si debemos parar
-                        current_property = ' '.join(property_parts)
                         if not looks_incomplete(current_property):
                             # Verificar si esta línea es realmente continuación
-                            if not looks_like_continuation(next_line):
+                            if not looks_like_continuation(next_line, current_property):
                                 # Probablemente es otra cosa, parar
                                 break
                             else:
                                 property_parts.append(next_line)
                                 lines_read += 1
+                                updated_property = ' '.join(property_parts)
+                                is_incomplete = looks_incomplete(updated_property)
                 
                 j += 1
             
@@ -260,6 +285,8 @@ def extract_properties_from_pdf(pdf_text):
                 r'HASTA LA FECHA Y HORA[^\n]*',
                 r'SNR[^\n]*',
                 r'SUPERINTENDENCIA[^\n]*',
+                r'SALVEDADES:[^\n]*',
+                r'Información Anterior o Corregida[^\n]*',
             ]
             
             for pattern in footer_cleanup_patterns:
