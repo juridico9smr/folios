@@ -18,7 +18,11 @@ except ImportError:
     st.stop()
 
 # Importar las funciones del script extract_properties
-from extract_properties import process_properties, format_output
+try:
+    from extract_properties import process_properties, format_output
+except ImportError as e:
+    st.error(f"Error al importar funciones: {str(e)}")
+    st.stop()
 
 st.set_page_config(
     page_title="Extractor de Propiedades",
