@@ -17,6 +17,9 @@ except ImportError:
     st.error("PyPDF2 no está instalado. Por favor ejecuta: pip install PyPDF2")
     st.stop()
 
+# Importar las funciones del script extract_properties
+from extract_properties import process_properties
+
 st.set_page_config(
     page_title="Extractor de Propiedades",
     page_icon="📄",
@@ -60,23 +63,13 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
     else:
         try:
             with st.spinner("Procesando archivos..."):
-                # Extraer folios del texto de matrículas
+                # Validar que haya folios en el formato esperado
                 folio_pattern = r'(\d+)-(\d+)'
                 matches = re.findall(folio_pattern, matriculas_text)
                 
                 if not matches:
                     st.error("❌ No se encontraron folios en el formato esperado (ej: 176-250064)")
                     st.stop()
-                
-                folio_to_circulo = {}
-                folios = []
-                
-                for circulo, folio in matches:
-                    if folio not in folio_to_circulo:
-                        folio_to_circulo[folio] = circulo
-                        folios.append(folio)
-                
-                st.info(f"✅ Encontrados {len(folios)} números de folio únicos")
                 
                 # Leer PDF
                 pdf_bytes = certificado_file.read()
@@ -89,76 +82,11 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                     st.error("❌ No se pudo extraer texto del PDF. Verifica que el PDF no esté escaneado o protegido.")
                     st.stop()
                 
-                # Extraer propiedades del PDF
-                folio_to_property = {}
-                pattern_general = r'(\d+)\s*->\s*(\d+)\s*:\s*([^\n]+)'
-                matches = re.findall(pattern_general, pdf_text)
+                # Usar la función reutilizable
+                output_lines, not_found = process_properties(matriculas_text, pdf_text)
                 
-                for num_before, folio, property_name_raw in matches:
-                    if folio in folio_to_property:
-                        continue  # Ya lo tenemos (tomar el primero si hay duplicados)
-                    
-                    # Limpiar el nombre de la propiedad
-                    property_name = property_name_raw.strip()
-                    
-                    # Remover espacios múltiples
-                    property_name = re.sub(r'\s+', ' ', property_name)
-                    
-                    # Remover puntos y guiones al final si existen
-                    property_name = property_name.rstrip('.-').strip()
-                    
-                    # Remover guiones al inicio si existen (como en "- APARTAMENTO...")
-                    property_name = property_name.lstrip('-').strip()
-                    
-                    # Si la propiedad está vacía después de limpiar, saltarla
-                    if not property_name:
-                        continue
-                    
-                    # Si el nombre de propiedad NO contiene "APARTAMENTO", buscar el APARTAMENTO más cercano
-                    if 'APARTAMENTO' not in property_name.upper():
-                        # Buscar la posición del folio en el texto
-                        folio_pattern_search = f"{num_before} -> {folio}"
-                        folio_idx = pdf_text.find(folio_pattern_search)
-                        
-                        if folio_idx > 0:
-                            # Buscar el APARTAMENTO más cercano, primero después, luego antes
-                            # Buscar después del folio (más cercano)
-                            after_text = pdf_text[folio_idx:min(len(pdf_text), folio_idx+200)]
-                            apt_match_after = re.search(r'APARTAMENTO\s+(\d+)', after_text)
-                            
-                            # Buscar antes del folio
-                            search_start = max(0, folio_idx-500)
-                            before_text = pdf_text[search_start:folio_idx]
-                            apt_matches_before = list(re.finditer(r'APARTAMENTO\s+(\d+)', before_text))
-                            
-                            # Preferir el APARTAMENTO después si existe, sino el más cercano antes
-                            if apt_match_after:
-                                apt_num = apt_match_after.group(1)
-                                property_name = f"{property_name} APARTAMENTO {apt_num}"
-                            elif apt_matches_before:
-                                # Tomar el último (más cercano al folio)
-                                apt_match = apt_matches_before[-1]
-                                apt_num = apt_match.group(1)
-                                property_name = f"{property_name} APARTAMENTO {apt_num}"
-                    
-                    folio_to_property[folio] = property_name
-                
-                # Procesar cada folio y generar el output
-                output_lines = []
-                not_found = []
-                
-                for folio in folios:
-                    if folio in folio_to_property:
-                        property_name = folio_to_property[folio]
-                        # Obtener el número de círculo para este folio
-                        circulo = folio_to_circulo.get(folio, '')
-                        # Formato: [nombre propiedad] [numero_circulo]-[folio]
-                        output_lines.append(f"{property_name} {circulo}-{folio}")
-                    else:
-                        not_found.append(folio)
-                        # Si no se encuentra, poner solo el folio con su círculo
-                        circulo = folio_to_circulo.get(folio, '')
-                        output_lines.append(f"NO ENCONTRADO {circulo}-{folio}")
+                # Calcular total de folios únicos desde las matrículas
+                folios = list(set([folio for _, folio in matches]))
                 
                 # Mostrar resultados
                 st.success("✅ Procesamiento completado!")
