@@ -37,6 +37,7 @@ except ImportError:
 def extract_properties_from_pdf(pdf_text):
     """
     Extrae las propiedades de un PDF dado su texto.
+    Maneja propiedades que pueden estar en múltiples líneas.
     
     Args:
         pdf_text: Texto extraído del PDF
@@ -46,32 +47,244 @@ def extract_properties_from_pdf(pdf_text):
     """
     folio_to_property = {}
     
-    # Patrón general: cualquier número -> folio : cualquier cosa hasta el final de línea
-    pattern_general = r'(\d+)\s*->\s*(\d+)\s*:\s*([^\n]+)'
-    matches = re.findall(pattern_general, pdf_text)
+    # Dividir en líneas para procesar propiedades multilínea
+    lines = pdf_text.split('\n')
     
-    for num_before, folio, property_name_raw in matches:
-        if folio in folio_to_property:
-            continue  # Ya lo tenemos (tomar el primero si hay duplicados)
+    # Patrón para detectar inicio de una propiedad: numero -> folio : o numero -> folio -
+    pattern_folio_start = r'(\d+)\s*->\s*(\d+)\s*[:-]\s*(.*)'
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = re.search(pattern_folio_start, line)
         
-        # Limpiar el nombre de la propiedad
-        property_name = property_name_raw.strip()
-        
-        # Remover espacios múltiples
-        property_name = re.sub(r'\s+', ' ', property_name)
-        
-        # Remover puntos y guiones al final si existen
-        property_name = property_name.rstrip('.-').strip()
-        
-        # Remover guiones al inicio si existen (como en "- APARTAMENTO...")
-        property_name = property_name.lstrip('-').strip()
-        
-        # Si la propiedad está vacía después de limpiar, saltarla
-        if not property_name:
-            continue
-        
-        # IMPORTANTE: Usar el nombre de propiedad exactamente como aparece en el PDF
-        folio_to_property[folio] = property_name
+        if match:
+            num_before, folio, property_start = match.groups()
+            
+            # Si el folio ya lo tenemos, saltarlo (tomar el primero)
+            if folio in folio_to_property:
+                i += 1
+                continue
+            
+            # Comenzar a construir el nombre de la propiedad
+            property_parts = [property_start.strip()]
+            
+            # Continuar leyendo líneas siguientes hasta encontrar:
+            # 1. El siguiente patrón de folio (numero -> folio)
+            # 2. La continuación completa de la propiedad (puede estar después de headers/footers)
+            # 3. Máximo 20 líneas adicionales (para permitir saltar headers/footers entre páginas)
+            j = i + 1
+            lines_read = 0
+            max_additional_lines = 20  # Aumentado para permitir saltar headers/footers
+            
+            # Patrones comunes de headers y footers a filtrar
+            footer_patterns = [
+                r'La validez de este documento',
+                r'certificados\.supernotariado\.gov\.co',
+                r'SNR',
+                r'SUPERINTENDENCIA',
+                r'OFICINA DE REGISTRO',
+                r'CERTIFICADO DE TRADICION',
+                r'MATRICULA INMOBILIARIA',
+                r'Pagina \d+',
+                r'TURNO:',
+                r'Impreso el',
+                r'No tiene validez sin la firma',
+                r'ESTE CERTIFICADO REFLEJA',
+                r'HASTA LA FECHA Y HORA',
+                r'Certificado generado con el Pin No:',
+                r'Nro Matrícula:',
+            ]
+            
+            def is_footer_or_header(line):
+                """Verifica si una línea es un footer o header común"""
+                line_upper = line.upper()
+                for pattern in footer_patterns:
+                    if re.search(pattern, line_upper, re.IGNORECASE):
+                        return True
+                return False
+            
+            def looks_incomplete(property_text):
+                """Verifica si una propiedad parece estar incompleta"""
+                # Palabras que sugieren que la propiedad continúa
+                incomplete_indicators = [
+                    r'\bEN\s*$',      # Termina con "EN"
+                    r'\bEN EL\s*$',   # Termina con "EN EL"
+                    r'\bEN LA\s*$',   # Termina con "EN LA"
+                    r'\bEN LOS\s*$',  # Termina con "EN LOS"
+                    r'\bEN LAS\s*$',  # Termina con "EN LAS"
+                    r'\bEL\s*$',      # Termina con "EL"
+                    r'\bDE\s*$',      # Termina con "DE"
+                    r'\bDEL\s*$',     # Termina con "DEL"
+                    r'\bLA\s*$',      # Termina con "LA"
+                    r'\bLAS\s*$',     # Termina con "LAS"
+                    r'\bLOS\s*$',     # Termina con "LOS"
+                    r'\bUN\s*$',      # Termina con "UN"
+                    r'\bUNA\s*$',     # Termina con "UNA"
+                    r'-\s*$',         # Termina con guión
+                ]
+                for pattern in incomplete_indicators:
+                    if re.search(pattern, property_text, re.IGNORECASE):
+                        return True
+                return False
+            
+            def looks_like_continuation(line):
+                """Verifica si una línea parece ser continuación de una propiedad"""
+                line_upper = line.upper().strip()
+                if not line_upper:
+                    return False
+                
+                # Patrones que indican continuación de propiedad
+                continuation_patterns = [
+                    r'^(PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO|SEXTO|SEPTIMO|OCTAVO|NOVENO|DECIMO)\s+PISO',  # "QUINTO PISO"
+                    r'^\d+\s+PISO',  # "5 PISO"
+                    r'^PISO\s+\d+',  # "PISO 5"
+                    r'^TORRE\s+\d+',  # "TORRE 1"
+                    r'^APARTAMENTO\s+\d+',  # "APARTAMENTO 101"
+                    r'^LOCAL\s+\d+',  # "LOCAL 5"
+                    r'^DEPOSITO\s+\d+',  # "DEPOSITO 10"
+                    r'^PARQUEADERO',  # "PARQUEADERO..."
+                    r'^UBICADO',  # "UBICADO..."
+                    r'^EN EL',  # "EN EL..."
+                    r'^EN LA',  # "EN LA..."
+                    r'^DEL\s+\w+',  # "DEL PRIMER..."
+                    r'^DE\s+\w+',  # "DE PRIMER..."
+                ]
+                
+                for pattern in continuation_patterns:
+                    if re.search(pattern, line_upper):
+                        return True
+                
+                # Si la línea es muy corta y tiene palabras comunes de propiedades, probablemente es continuación
+                if len(line_upper.split()) <= 5:
+                    common_words = ['PISO', 'TORRE', 'APARTAMENTO', 'LOCAL', 'DEPOSITO', 'PARQUEADERO', 'UBICADO']
+                    if any(word in line_upper for word in common_words):
+                        return True
+                
+                return False
+            
+            # Contador de headers/footers consecutivos
+            consecutive_headers = 0
+            max_consecutive_headers = 15  # Aumentado para permitir saltar más headers/footers
+            
+            # Verificar si la propiedad inicial parece incompleta
+            is_incomplete = looks_incomplete(property_start.strip())
+            
+            while j < len(lines) and lines_read < max_additional_lines:
+                next_line = lines[j].strip()
+                
+                # Si encontramos el siguiente patrón de folio, parar
+                if re.search(pattern_folio_start, lines[j]):
+                    break
+                
+                # Si es un footer o header
+                if is_footer_or_header(next_line):
+                    consecutive_headers += 1
+                    # Si la propiedad está incompleta, continuar buscando después de headers
+                    if is_incomplete and consecutive_headers <= max_consecutive_headers:
+                        j += 1
+                        continue
+                    # Si hay demasiados headers consecutivos y la propiedad parece completa, parar
+                    elif consecutive_headers > max_consecutive_headers:
+                        break
+                    j += 1
+                    continue
+                else:
+                    consecutive_headers = 0  # Resetear contador
+                
+                # Si la línea está vacía
+                if not next_line:
+                    # Si la propiedad está incompleta, continuar buscando
+                    if is_incomplete:
+                        j += 1
+                        continue
+                    # Si parece completa, verificar si hay más contenido
+                    elif property_parts:
+                        current_property = ' '.join(property_parts)
+                        if not looks_incomplete(current_property):
+                            # Verificar las siguientes líneas para ver si hay continuación
+                            found_continuation = False
+                            for k in range(j + 1, min(j + 5, len(lines))):
+                                check_line = lines[k].strip()
+                                if check_line and not is_footer_or_header(check_line):
+                                    if looks_like_continuation(check_line) or re.search(pattern_folio_start, check_line):
+                                        found_continuation = True
+                                        break
+                            if not found_continuation:
+                                break
+                    j += 1
+                    continue
+                
+                # Si la línea tiene contenido y no es footer/header
+                if next_line:
+                    # Si parece continuación de una propiedad incompleta, agregarla
+                    if is_incomplete or looks_like_continuation(next_line) or not property_parts:
+                        property_parts.append(next_line)
+                        lines_read += 1
+                        is_incomplete = False  # Resetear, ya agregamos contenido
+                    else:
+                        # Si no parece continuación y ya tenemos contenido, verificar si debemos parar
+                        current_property = ' '.join(property_parts)
+                        if not looks_incomplete(current_property):
+                            # Verificar si esta línea es realmente continuación
+                            if not looks_like_continuation(next_line):
+                                # Probablemente es otra cosa, parar
+                                break
+                            else:
+                                property_parts.append(next_line)
+                                lines_read += 1
+                
+                j += 1
+            
+            # Combinar todas las partes de la propiedad
+            property_name_raw = ' '.join(property_parts)
+            
+            # Limpiar el nombre de la propiedad
+            property_name = property_name_raw.strip()
+            
+            # Remover headers/footers que puedan estar concatenados en el texto
+            # (a veces el PDF los concatena sin espacios)
+            footer_cleanup_patterns = [
+                r'OFICINA DE REGISTRO[^\n]*',
+                r'CERTIFICADO DE TRADICION[^\n]*',
+                r'MATRICULA INMOBILIARIA[^\n]*',
+                r'La validez de este documento[^\n]*',
+                r'certificados\.supernotariado\.gov\.co[^\n]*',
+                r'Certificado generado con el Pin No:[^\n]*',
+                r'Nro Matrícula:[^\n]*',
+                r'Pagina \d+[^\n]*',
+                r'TURNO:[^\n]*',
+                r'Impreso el[^\n]*',
+                r'No tiene validez[^\n]*',
+                r'ESTE CERTIFICADO REFLEJA[^\n]*',
+                r'HASTA LA FECHA Y HORA[^\n]*',
+                r'SNR[^\n]*',
+                r'SUPERINTENDENCIA[^\n]*',
+            ]
+            
+            for pattern in footer_cleanup_patterns:
+                property_name = re.sub(pattern, '', property_name, flags=re.IGNORECASE)
+            
+            # Remover espacios múltiples
+            property_name = re.sub(r'\s+', ' ', property_name)
+            
+            # Remover puntos y guiones al final si existen (con espacios antes)
+            property_name = re.sub(r'\s*[-.]+\s*$', '', property_name).strip()
+            
+            # Remover guiones al inicio si existen (como en "- APARTAMENTO...")
+            property_name = re.sub(r'^\s*[-]+\s*', '', property_name).strip()
+            
+            # Remover cualquier número de matrícula que quede al final (ej: "100-256825,100-262122,,,")
+            property_name = re.sub(r'\d+-\d+[,\s]*$', '', property_name).strip()
+            property_name = re.sub(r',+$', '', property_name).strip()
+            
+            # Si la propiedad está vacía después de limpiar, saltarla
+            if property_name:
+                folio_to_property[folio] = property_name
+            
+            i = j  # Continuar desde donde paramos
+        else:
+            i += 1
     
     return folio_to_property
 
