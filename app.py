@@ -18,7 +18,7 @@ except ImportError:
     st.stop()
 
 # Importar las funciones del script extract_properties
-from extract_properties import process_properties
+from extract_properties import process_properties, format_output
 
 st.set_page_config(
     page_title="Extractor de Propiedades",
@@ -53,6 +53,16 @@ with col2:
         key='certificado'
     )
 
+# Selector de formato de salida
+st.markdown("---")
+st.subheader("⚙️ Configuración de Salida")
+output_format = st.radio(
+    "Formato de salida:",
+    ["TXT", "CSV"],
+    horizontal=True,
+    help="TXT: Formato original con nombre y círculo-folio. CSV: Dos columnas (nombre, folio) sin headers."
+)
+
 # Botón para procesar
 st.markdown("---")
 if st.button("🚀 Procesar", type="primary", use_container_width=True):
@@ -83,7 +93,11 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                     st.stop()
                 
                 # Usar la función reutilizable
-                output_lines, not_found = process_properties(matriculas_text, pdf_text)
+                property_data, not_found = process_properties(matriculas_text, pdf_text)
+                
+                # Formatear según el formato seleccionado
+                format_lower = output_format.lower()
+                output_lines = format_output(property_data, format_lower)
                 
                 # Calcular total de folios únicos desde las matrículas
                 folios = list(set([folio for _, folio in matches]))
@@ -117,12 +131,14 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                     label_visibility="visible"
                 )
                 
-                # Botón para descargar
+                # Botón para descargar con el formato correcto
+                file_extension = format_lower
+                mime_type = "text/csv" if format_lower == "csv" else "text/plain"
                 st.download_button(
-                    label="📥 Descargar Resultado como .txt",
+                    label=f"📥 Descargar Resultado como .{file_extension}",
                     data=result_text,
-                    file_name="resultado.txt",
-                    mime="text/plain",
+                    file_name=f"resultado.{file_extension}",
+                    mime=mime_type,
                     use_container_width=True
                 )
                 

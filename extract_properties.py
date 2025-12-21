@@ -4,17 +4,20 @@ Script para extraer nombres de propiedades del certificado PDF
 y asociarlos con los números de folio.
 
 Uso:
-    python3 extract_properties.py [nombre_proyecto]
+    python3 extract_properties.py [nombre_proyecto] [--format txt|csv]
     
     Si no se proporciona nombre_proyecto, se usa el valor definido en PROYECTO_NOMBRE
     
     Ejemplo:
     python3 extract_properties.py "2 1 P110701 VENTURA"
+    python3 extract_properties.py "2 1 P110701 VENTURA" --format csv
 
 El script:
 1. Lee los números de folio del archivo '<nombre_proyecto>/matriculas.txt'
 2. Extrae las propiedades del PDF '<nombre_proyecto>/certificado.pdf'
-3. Genera el archivo '<nombre_proyecto>/<nombre_proyecto>.txt' con el formato: [nombre propiedad] [numero_circulo]-[folio]
+3. Genera el archivo '<nombre_proyecto>/<nombre_proyecto>.txt' o '.csv' según el formato:
+   - TXT: [nombre propiedad] [numero_circulo]-[folio]
+   - CSV: nombre_inmueble,folio (sin headers)
 """
 
 import re
@@ -106,7 +109,9 @@ def process_properties(matriculas_text, pdf_text):
         pdf_text: Texto extraído del PDF
         
     Returns:
-        list: Lista de líneas con el formato: [nombre propiedad] [numero_circulo]-[folio]
+        tuple: (property_data list, not_found list)
+            property_data: Lista de tuplas (property_name, circulo, folio)
+            not_found: Lista de folios no encontrados
     """
     # Extraer folios y círculos
     folio_to_circulo, folios = extract_folios_from_matriculas(matriculas_text)
@@ -114,21 +119,45 @@ def process_properties(matriculas_text, pdf_text):
     # Extraer propiedades del PDF
     folio_to_property = extract_properties_from_pdf(pdf_text)
     
-    # Generar output
-    output_lines = []
+    # Generar datos estructurados
+    property_data = []
     not_found = []
     
     for folio in folios:
+        circulo = folio_to_circulo.get(folio, '')
         if folio in folio_to_property:
             property_name = folio_to_property[folio]
-            circulo = folio_to_circulo.get(folio, '')
-            output_lines.append(f"{property_name} {circulo}-{folio}")
+            property_data.append((property_name, circulo, folio))
         else:
             not_found.append(folio)
-            circulo = folio_to_circulo.get(folio, '')
-            output_lines.append(f"NO ENCONTRADO {circulo}-{folio}")
+            property_data.append(("NO ENCONTRADO", circulo, folio))
     
-    return output_lines, not_found
+    return property_data, not_found
+
+
+def format_output(property_data, output_format='txt'):
+    """
+    Formatea los datos de propiedades según el formato especificado.
+    
+    Args:
+        property_data: Lista de tuplas (property_name, circulo, folio)
+        output_format: 'txt' o 'csv'
+        
+    Returns:
+        list: Lista de líneas formateadas
+    """
+    output_lines = []
+    
+    if output_format.lower() == 'csv':
+        # Formato CSV: nombre_inmueble,folio (sin headers)
+        for property_name, circulo, folio in property_data:
+            output_lines.append(f"{property_name},{folio}")
+    else:
+        # Formato TXT: [nombre propiedad] [numero_circulo]-[folio]
+        for property_name, circulo, folio in property_data:
+            output_lines.append(f"{property_name} {circulo}-{folio}")
+    
+    return output_lines
 
 # ============================================================================
 # CONFIGURACIÓN: Puedes quemar el nombre del proyecto aquí si prefieres
@@ -138,24 +167,45 @@ PROYECTO_NOMBRE = '2 1 P109018 EDIFICIO PARQUE 76'
 
 def main():
     """Función principal que se ejecuta cuando se llama el script directamente"""
-    # Obtener el nombre del proyecto
-    if PROYECTO_NOMBRE:
-        proyecto_nombre = PROYECTO_NOMBRE
-    elif len(sys.argv) >= 2:
-        proyecto_nombre = sys.argv[1]
-    else:
-        print("Error: Debes proporcionar el nombre del proyecto")
-        print("Opción 1: Pasarlo como parámetro")
-        print('  Uso: python3 extract_properties.py "2 1 P110701 VENTURA"')
-        print("Opción 2: Definirlo en PROYECTO_NOMBRE en el código")
-        sys.exit(1)
+    # Obtener el nombre del proyecto y formato
+    proyecto_nombre = None
+    output_format = 'txt'
+    
+    # Parsear argumentos
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == '--format' and i + 1 < len(sys.argv):
+            output_format = sys.argv[i + 1].lower()
+            if output_format not in ['txt', 'csv']:
+                print(f"Error: Formato '{output_format}' no válido. Use 'txt' o 'csv'")
+                sys.exit(1)
+            i += 2
+        elif not proyecto_nombre and not arg.startswith('--'):
+            proyecto_nombre = arg
+            i += 1
+        else:
+            i += 1
+    
+    # Si no se proporcionó nombre, usar el de configuración
+    if not proyecto_nombre:
+        if PROYECTO_NOMBRE:
+            proyecto_nombre = PROYECTO_NOMBRE
+        else:
+            print("Error: Debes proporcionar el nombre del proyecto")
+            print("Opción 1: Pasarlo como parámetro")
+            print('  Uso: python3 extract_properties.py "2 1 P110701 VENTURA"')
+            print('  Uso: python3 extract_properties.py "2 1 P110701 VENTURA" --format csv')
+            print("Opción 2: Definirlo en PROYECTO_NOMBRE en el código")
+            sys.exit(1)
 
     # Construir rutas de archivos
     base_dir = os.path.dirname(os.path.abspath(__file__))
     carpeta_path = os.path.join(base_dir, proyecto_nombre)
     input_file = os.path.join(carpeta_path, 'matriculas.txt')
     pdf_file = os.path.join(carpeta_path, 'certificado.pdf')
-    output_file = os.path.join(carpeta_path, f'{proyecto_nombre}.txt')
+    extension = 'csv' if output_format == 'csv' else 'txt'
+    output_file = os.path.join(carpeta_path, f'{proyecto_nombre}.{extension}')
 
     # Validar que existan los archivos de entrada
     if not os.path.exists(input_file):
@@ -179,13 +229,14 @@ def main():
     print(f"PDF leído. Total de caracteres: {len(pdf_text)}")
 
     # Usar las funciones reutilizables
-    output_lines, not_found = process_properties(input_content, pdf_text)
+    property_data, not_found = process_properties(input_content, pdf_text)
+    output_lines = format_output(property_data, output_format)
 
     # Escribir al archivo de salida
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write('\n'.join(output_lines))
 
-    print(f"\nResultados escritos en {output_file}")
+    print(f"\nResultados escritos en {output_file} (formato: {output_format.upper()})")
     print(f"Total de folios procesados: {len(output_lines)}")
     print(f"Folios encontrados: {len(output_lines) - len(not_found)}")
     print(f"Folios no encontrados: {len(not_found)}")
