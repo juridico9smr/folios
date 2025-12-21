@@ -31,3 +31,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Google Credentials
+google_credentials.json
+
+# Environment variables
+.env
+.env.local
+
