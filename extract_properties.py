@@ -89,7 +89,7 @@ def extract_properties_from_pdf(pdf_text):
         
         # Palabras clave comunes que indican inicio de propiedad
         property_keywords = [
-            r'^APTO\s+',           # APTO seguido de espacio
+            r'^APTO\.?\s*',        # APTO o APTO. seguido de espacio o directamente número
             r'^APARTAMENTO\s+',     # APARTAMENTO seguido de espacio
             r'^TORRE\s+',          # TORRE seguido de espacio
             r'^LOCAL\s+',          # LOCAL seguido de espacio
@@ -101,21 +101,26 @@ def extract_properties_from_pdf(pdf_text):
             r'^OFICINA\s+',        # OFICINA seguido de espacio
             r'^LOTE\s+',           # LOTE seguido de espacio
             r'^MANZANA\s+',        # MANZANA seguido de espacio
+            r'^CESION\s+',         # CESION seguido de espacio
+            r'^CESIÓN\s+',         # CESIÓN seguido de espacio
         ]
         
         # Buscar si comienza con alguna palabra clave
         for keyword_pattern in property_keywords:
             if re.search(keyword_pattern, remaining_text, re.IGNORECASE):
                 # Encontrar dónde termina el folio (justo antes de la palabra clave)
+                # Usar un lookahead más flexible que capture todo después de la palabra clave
                 folio_match = re.search(rf'(\d+)\s*->\s*(\d+)(?={keyword_pattern})', line, re.IGNORECASE)
                 if folio_match:
                     folio = folio_match.group(2)
+                    # Capturar todo el texto después del folio, no solo hasta la palabra clave
                     property_start = remaining_text
                     return (num_before, folio, property_start)
         
         # Si no comienza con palabra clave, buscar transición de dígitos a letras
         # Ejemplo: "230510APTO" -> folio termina en 0, propiedad empieza con A
-        transition_match = re.search(r'(\d+)\s*->\s*(\d+)([A-Z][A-Z0-9\s\-]*)', line)
+        # Incluir punto (.) en el patrón para casos como "174484APTO. 102"
+        transition_match = re.search(r'(\d+)\s*->\s*(\d+)([A-Z][A-Z0-9\s\-\.]*)', line)
         if transition_match:
             num_before = transition_match.group(1)
             folio = transition_match.group(2)
