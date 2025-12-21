@@ -149,9 +149,12 @@ def format_output(property_data, output_format='txt'):
     output_lines = []
     
     if output_format.lower() == 'csv':
-        # Formato CSV: nombre_inmueble,folio (sin headers)
+        # Formato CSV: 5 columnas (Inmueble, folio, escritura publica, escritura, paginas)
+        # Agregar headers
+        output_lines.append("Inmueble,folio,EP,escritura link,paginas")
+        # Solo llenamos Inmueble y folio (con numero_circulo-folio)
         for property_name, circulo, folio in property_data:
-            output_lines.append(f"{property_name},{folio}")
+            output_lines.append(f"{property_name},{circulo}-{folio},,,")
     else:
         # Formato TXT: [nombre propiedad] [numero_circulo]-[folio]
         for property_name, circulo, folio in property_data:
