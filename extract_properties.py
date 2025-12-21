@@ -185,7 +185,21 @@ def extract_properties_from_pdf(pdf_text):
                 r'Nro Matrícula:',
                 r'SALVEDADES:',
                 r'Información Anterior o Corregida',
-        ]
+                r'Anotación',
+                r'Anotacion',
+                r'Nro corrección',
+                r'Radicación:',
+                r'Radicacion:',
+                r'CORREGIDO EN CABIDA',
+                r'CORREGIDO EN LINDEROS',
+                r'NUMERO DE DOCUMENTO',
+                r'VALE\.',
+                r'ART\.\d+',
+                r'LEY \d+',
+                r'SE CORRIGE',
+                r'SE CREA',
+                r'\* ?\* ?\*',  # Filtrar "***" (cualquier número de espacios intermedios)
+            ]
         
         def is_footer_or_header(line):
             """Verifica si una línea es un footer o header común"""
@@ -289,15 +303,21 @@ def extract_properties_from_pdf(pdf_text):
             # Si es un footer o header
             if is_footer_or_header(next_line):
                 consecutive_headers += 1
-                # Si la propiedad está incompleta, continuar buscando después de headers
-                if is_incomplete and consecutive_headers <= max_consecutive_headers:
+                
+                # Verificar el estado actual de la propiedad
+                current_property = ' '.join(property_parts)
+                is_currently_incomplete = looks_incomplete(current_property)
+                
+                # Si la propiedad está incompleta, podemos continuar buscando después de footers
+                # (para casos donde la propiedad está dividida entre páginas)
+                if is_currently_incomplete and consecutive_headers <= 5:
+                    # Continuar buscando si la propiedad está incompleta y no hay demasiados headers
                     j += 1
                     continue
-                # Si hay demasiados headers consecutivos y la propiedad parece completa, parar
-                elif consecutive_headers > max_consecutive_headers:
+                else:
+                    # Si la propiedad parece completa o hay muchos headers, terminar
+                    # Esto evita capturar información de la siguiente página
                     break
-                j += 1
-                continue
             else:
                 consecutive_headers = 0  # Resetear contador
             
@@ -374,8 +394,20 @@ def extract_properties_from_pdf(pdf_text):
                 r'HASTA LA FECHA Y HORA[^\n]*',
                 r'SNR[^\n]*',
                 r'SUPERINTENDENCIA[^\n]*',
-            r'SALVEDADES:[^\n]*',
-            r'Información Anterior o Corregida[^\n]*',
+                r'SALVEDADES:[^\n]*',
+                r'Información Anterior o Corregida[^\n]*',
+                r'Anotación[^\n]*',
+                r'Anotacion[^\n]*',
+                r'Nro corrección[^\n]*',
+                r'Nro correccion[^\n]*',
+                r'Radicación:[^\n]*',
+                r'Radicacion:[^\n]*',
+                r'CORREGIDO EN CABIDA[^\n]*',
+                r'CORREGIDO EN LINDEROS[^\n]*',
+                r'NUMERO DE DOCUMENTO[^\n]*',
+                r'VALE\.[^\n]*',
+                r'ART\.\d+[^\n]*',
+                r'LEY \d+[^\n]*',
         ]
         
         for pattern in footer_cleanup_patterns:
