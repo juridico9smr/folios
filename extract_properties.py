@@ -56,6 +56,13 @@ def extract_properties_from_pdf(pdf_text):
     # Usamos dos patrones: uno para formato normal y otro para formato concatenado
     # El patrón normal acepta: :, -, ., o espacios después del folio
     # Nota: el guión debe estar al final o escapado en la clase de caracteres
+    # 
+    # Ejemplos de formatos soportados:
+    # - "5 -> 5566420 : APARTAMENTO 101" (dos puntos)
+    # - "5 -> 5566420 - APARTAMENTO 101" (guión)
+    # - "5 -> 5566420 : - APARTAMENTO NRO 0121 PRIMER PISO TORRE 1 ETAPA 1" (dos puntos y guión)
+    # - "5 -> 5566420. APARTAMENTO 101" (punto)
+    # - "5 -> 5566420 APARTAMENTO 101" (solo espacio)
     pattern_folio_normal = r'(\d+)\s*->\s*(\d+)\s*[\.:\s-]+\s*(.*)'
     
     def extract_concatenated_folio(line):
@@ -140,9 +147,59 @@ def extract_properties_from_pdf(pdf_text):
         
         return None
     
+    # Patrones comunes de headers y footers a filtrar (definirlos antes del loop principal)
+    footer_patterns = [
+            r'La validez de este documento',
+            r'certificados\.supernotariado\.gov\.co',
+            r'SNR',
+            r'SUPERINTENDENCIA',
+            r'OFICINA DE REGISTRO',
+            r'CERTIFICADO DE TRADICION',
+            r'MATRICULA INMOBILIARIA',
+            r'Pagina \d+',
+            r'TURNO:',
+            r'Impreso el',
+            r'No tiene validez sin la firma',
+            r'ESTE CERTIFICADO REFLEJA',
+            r'HASTA LA FECHA Y HORA',
+            r'Certificado generado con el Pin No:',
+            r'Nro Matrícula:',
+            r'SALVEDADES:',
+            r'Información Anterior o Corregida',
+            r'Anotación',
+            r'Anotacion',
+            r'Nro corrección',
+            r'Radicación:',
+            r'Radicacion:',
+            r'CORREGIDO EN CABIDA',
+            r'CORREGIDO EN LINDEROS',
+            r'NUMERO DE DOCUMENTO',
+            r'VALE\.',
+            r'ART\.\d+',
+            r'LEY \d+',
+            r'SE CORRIGE',
+            r'SE CREA',
+            r'\* ?\* ?\*',  # Filtrar "***" (cualquier número de espacios intermedios)
+        ]
+    
+    def is_footer_or_header(line):
+        """Verifica si una línea es un footer o header común"""
+        line_upper = line.upper()
+        for pattern in footer_patterns:
+            if re.search(pattern, line_upper, re.IGNORECASE):
+                return True
+        return False
+    
     i = 0
     while i < len(lines):
         line = lines[i]
+        
+        # Saltar líneas que son headers/footers antes de buscar el patrón de folio
+        # Esto evita que headers interfieran con la detección
+        if is_footer_or_header(line):
+            i += 1
+            continue
+        
         match = re.search(pattern_folio_normal, line)
         
         # Si no encontramos con el patrón normal, intentar con el concatenado
@@ -170,49 +227,6 @@ def extract_properties_from_pdf(pdf_text):
         j = i + 1
         lines_read = 0
         max_additional_lines = 20  # Aumentado para permitir saltar headers/footers
-        
-        # Patrones comunes de headers y footers a filtrar
-        footer_patterns = [
-                r'La validez de este documento',
-                r'certificados\.supernotariado\.gov\.co',
-                r'SNR',
-                r'SUPERINTENDENCIA',
-                r'OFICINA DE REGISTRO',
-                r'CERTIFICADO DE TRADICION',
-                r'MATRICULA INMOBILIARIA',
-                r'Pagina \d+',
-                r'TURNO:',
-                r'Impreso el',
-                r'No tiene validez sin la firma',
-                r'ESTE CERTIFICADO REFLEJA',
-                r'HASTA LA FECHA Y HORA',
-                r'Certificado generado con el Pin No:',
-                r'Nro Matrícula:',
-                r'SALVEDADES:',
-                r'Información Anterior o Corregida',
-                r'Anotación',
-                r'Anotacion',
-                r'Nro corrección',
-                r'Radicación:',
-                r'Radicacion:',
-                r'CORREGIDO EN CABIDA',
-                r'CORREGIDO EN LINDEROS',
-                r'NUMERO DE DOCUMENTO',
-                r'VALE\.',
-                r'ART\.\d+',
-                r'LEY \d+',
-                r'SE CORRIGE',
-                r'SE CREA',
-                r'\* ?\* ?\*',  # Filtrar "***" (cualquier número de espacios intermedios)
-            ]
-        
-        def is_footer_or_header(line):
-            """Verifica si una línea es un footer o header común"""
-            line_upper = line.upper()
-            for pattern in footer_patterns:
-                if re.search(pattern, line_upper, re.IGNORECASE):
-                    return True
-            return False
         
         def looks_incomplete(property_text):
             """Verifica si una propiedad parece estar incompleta"""
@@ -313,12 +327,45 @@ def extract_properties_from_pdf(pdf_text):
                 current_property = ' '.join(property_parts)
                 is_currently_incomplete = looks_incomplete(current_property)
                 
-                # Si la propiedad está incompleta, podemos continuar buscando después de footers
-                # (para casos donde la propiedad está dividida entre páginas)
+                # Estrategia mejorada para manejar headers/footers:
+                # 1. Si aún no hemos capturado contenido de la propiedad (solo el inicio),
+                #    y encontramos un header/footer, probablemente es un header antes de la propiedad
+                #    que ya fue procesado. Continuar buscando.
+                if len(property_parts) == 1 and len(property_parts[0].strip()) < 50:
+                    # Probablemente es un header antes de la propiedad, continuar
+                    j += 1
+                    continue
+                
+                # 2. Si la propiedad está incompleta, podemos continuar buscando después de footers
+                #    (para casos donde la propiedad está dividida entre páginas)
                 if is_currently_incomplete and consecutive_headers <= 5:
                     # Continuar buscando si la propiedad está incompleta y no hay demasiados headers
                     j += 1
                     continue
+                
+                # 3. Si la propiedad parece completa y encontramos headers/footers,
+                #    verificar si hay más contenido útil después
+                if not is_currently_incomplete:
+                    # Buscar en las siguientes 3 líneas si hay contenido que parezca continuación
+                    found_useful_content = False
+                    for k in range(j + 1, min(j + 4, len(lines))):
+                        check_line = lines[k].strip()
+                        if check_line and not is_footer_or_header(check_line):
+                            # Si hay contenido que parece continuación, continuar
+                            if looks_like_continuation(check_line, current_property):
+                                found_useful_content = True
+                                break
+                            # Si encontramos otro folio, definitivamente parar
+                            if re.search(pattern_folio_normal, check_line) or extract_concatenated_folio(check_line):
+                                break
+                    
+                    if not found_useful_content:
+                        # No hay más contenido útil, terminar
+                        break
+                    else:
+                        # Hay contenido útil después, continuar
+                        j += 1
+                        continue
                 else:
                     # Si la propiedad parece completa o hay muchos headers, terminar
                     # Esto evita capturar información de la siguiente página
@@ -429,6 +476,8 @@ def extract_properties_from_pdf(pdf_text):
             property_name = re.sub(r'\s*[-.]+\s*$', '', property_name).strip()
         
         # Remover guiones al inicio si existen (como en "- APARTAMENTO...")
+        # Esto maneja casos como "5 -> 5566420 : - APARTAMENTO..." donde el patrón
+        # captura el guión inicial, pero lo removemos aquí para limpiar el resultado
         property_name = re.sub(r'^\s*[-]+\s*', '', property_name).strip()
         
         # Remover cualquier número de matrícula que quede al final (ej: "100-256825,100-262122,,,")
