@@ -24,6 +24,7 @@ import re
 import os
 import sys
 import io
+import csv
 
 try:
     from PyPDF2 import PdfReader
@@ -573,11 +574,20 @@ def format_output(property_data, output_format='txt'):
     
     if output_format.lower() == 'csv':
         # Formato CSV: 5 columnas (Inmueble, folio, escritura publica, escritura, paginas)
+        # Usar csv.writer para manejar correctamente comas y comillas dentro de los valores
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
+        
         # Agregar headers
-        output_lines.append("Inmueble,folio,EP,escritura link,paginas")
+        csv_writer.writerow(["Inmueble", "folio", "EP", "escritura link", "paginas"])
+        
         # Solo llenamos Inmueble y folio (con numero_circulo-folio)
         for property_name, circulo, folio in property_data:
-            output_lines.append(f"{property_name},{circulo}-{folio},,,")
+            csv_writer.writerow([property_name, f"{circulo}-{folio}", "", "", ""])
+        
+        # Obtener las líneas del CSV (ya con comillas donde sea necesario)
+        csv_content = csv_buffer.getvalue()
+        output_lines = csv_content.strip().split('\n')
     else:
         # Formato TXT: [nombre propiedad] [numero_circulo]-[folio]
         for property_name, circulo, folio in property_data:
