@@ -510,7 +510,11 @@ def extract_folios_from_matriculas(matriculas_text):
         tuple: (folio_to_circulo dict, folios list)
     """
     # Patrón que acepta números opcionalmente seguidos de letras (ej: 176, 51N)
-    folio_pattern = r'(\d+[A-Z]?)-(\d+)'
+    # Acepta espacios opcionales antes y después del guión para manejar casos como:
+    # - "307-111067" (formato normal)
+    # - "307- 111067" (con espacio después del guión)
+    # - "307 - 111067" (con espacios antes y después)
+    folio_pattern = r'(\d+[A-Z]?)\s*-\s*(\d+)'
     matches = re.findall(folio_pattern, matriculas_text)
     
     folio_to_circulo = {}
