@@ -173,6 +173,106 @@ DOS -
 ```
 **Resultado esperado:** `APARTAMENTO NUMERO DOSCIENTOS UNO (201) TORRE 4: UBICADO EN EL PISO DOS`
 
+## Extracción de Escrituras Públicas (EP)
+
+### 24. Extracción de Escritura con Formato Estándar (DEL con guiones)
+```
+3 -> 190172 : TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI
+```
+**Anotación en PDF:**
+```
+ANOTACION: Nro 003 Fecha: 21-09-2022 Radicación: 2022-350-6-20321
+Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,354,780
+```
+**Resultado esperado:** 
+- Inmueble: `TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI`
+- EP: `ESCRITURA 4067 DEL 16-09-2022`
+
+### 25. Extracción de Escritura con Formato Alternativo (DE en lugar de DEL)
+```
+1 -> 190173 : APARTAMENTO 104
+```
+**Anotación en PDF:**
+```
+ANOTACION: Nro 001 Fecha: 14-03-1985 Radicación:
+Doc: ESCRITURA 6833 DE 28-12-1984 NOTARIA 10 DE CALI VALOR ACTO: $0
+```
+**Resultado esperado:**
+- Inmueble: `APARTAMENTO 104`
+- EP: `ESCRITURA 6833 DE 28-12-1984`
+
+### 26. Extracción de Escritura con Fecha con Slashes
+```
+2 -> 190174 : APARTAMENTO 105
+```
+**Anotación en PDF:**
+```
+ANOTACION: Nro 002 Fecha: 31-07-1985 Radicación:
+Doc: ESCRITURA 3723 DEL 25/07/1985 NOTARIA 10 DE CALI VALOR ACTO: $0
+```
+**Resultado esperado:**
+- Inmueble: `APARTAMENTO 105`
+- EP: `ESCRITURA 3723 DEL 25/07/1985`
+
+### 27. Múltiples Folios Compartiendo la Misma Anotación (Validar Caché)
+```
+3 -> 190172 : TORRE 9 - APARTAMENTO 103
+3 -> 190175 : TORRE 9 - APARTAMENTO 104
+3 -> 190176 : TORRE 9 - APARTAMENTO 105
+```
+**Anotación en PDF:**
+```
+ANOTACION: Nro 003 Fecha: 21-09-2022 Radicación: 2022-350-6-20321
+Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,354,780
+```
+**Resultado esperado:**
+- Todos los folios deben tener la misma escritura en EP: `ESCRITURA 4067 DEL 16-09-2022`
+- **Nota:** La escritura debe buscarse solo una vez y reutilizarse para todos los folios con la misma anotación (caché).
+
+### 28. Caso donde No se Encuentra la Anotación
+```
+99 -> 999999 : APARTAMENTO 999
+```
+**Anotación en PDF:**
+```
+(No existe ANOTACION: Nro 099 en el PDF)
+```
+**Resultado esperado:**
+- Inmueble: `APARTAMENTO 999`
+- EP: `` (string vacío)
+
+### 29. Caso donde la Anotación Existe pero No Tiene Escritura
+```
+5 -> 190177 : APARTAMENTO 106
+```
+**Anotación en PDF:**
+```
+ANOTACION: Nro 005 Fecha: 15-01-2023 Radicación: 2023-100-1-12345
+ESPECIFICACION: OTRO: 999 ACLARACION
+(No hay línea "Doc: ESCRITURA..." en esta anotación)
+```
+**Resultado esperado:**
+- Inmueble: `APARTAMENTO 106`
+- EP: `` (string vacío)
+
+### 30. Extracción de Escritura con Formato Completo
+```
+1 -> 190178 : APARTAMENTO 107
+```
+**Anotación en PDF:**
+```
+ANOTACION: Nro 001 Fecha: 14-03-1985 Radicación:
+Doc: ESCRITURA 6833 DEL 28-12-1984 NOTARIA 10 DE CALI VALOR ACTO: $0
+ESPECIFICACION: GRAVAMEN: 210 HIPOTECA
+PERSONAS QUE INTERVIENEN EN EL ACTO (X-Titular de derecho real de dominio,I-Titular de dominio incompleto)
+DE: INMOBILIARIA POPULAR CALI LTDA X
+A: GONCHEVERRY POPULAR CALI LTDA
+```
+**Resultado esperado:**
+- Inmueble: `APARTAMENTO 107`
+- EP: `ESCRITURA 6833 DEL 28-12-1984`
+- **Nota:** Solo debe extraer el nombre de la escritura, no el resto de la información de la anotación.
+
 ## Notas Importantes
 
 1. **Exactitud**: El nombre de la propiedad debe copiarse exactamente como aparece en el certificado, sin agregar información que no esté presente.
@@ -187,4 +287,10 @@ DOS -
 4. **Robustez**: Debe funcionar con diferentes formatos de separación y tipos de inmuebles.
 
 5. **Círculos**: Debe aceptar círculos con formato numérico (`176`) o alfanumérico (`51N`).
+
+6. **Escrituras Públicas**: 
+   - La columna EP solo se llena en formato CSV, no en TXT
+   - Si no se encuentra la anotación o la escritura, se deja vacío (string vacío)
+   - El sistema usa caché para evitar buscar múltiples veces la misma anotación
+   - El número de anotación siempre tiene 3 dígitos (001, 002, 003, etc.)
 

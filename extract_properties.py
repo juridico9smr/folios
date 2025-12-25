@@ -44,9 +44,12 @@ def extract_properties_from_pdf(pdf_text):
         pdf_text: Texto extraído del PDF
         
     Returns:
-        dict: Diccionario que mapea folio -> nombre de propiedad
+        tuple: (dict, dict) donde:
+            - Primer dict: folio -> nombre de propiedad
+            - Segundo dict: folio -> numero_anotacion
     """
     folio_to_property = {}
+    folio_to_anotacion = {}
     
     # Dividir en líneas para procesar propiedades multilínea
     lines = pdf_text.split('\n')
@@ -488,12 +491,65 @@ def extract_properties_from_pdf(pdf_text):
         # Si la propiedad está vacía después de limpiar, saltarla
         if property_name:
             folio_to_property[folio] = property_name
+            # Guardar el número de anotación (num_before) para este folio
+            # Formatear con 3 dígitos (ej: "3" -> "003")
+            numero_anotacion = num_before.zfill(3)
+            folio_to_anotacion[folio] = numero_anotacion
         
         i = j  # Continuar desde donde paramos
     else:
         i += 1
     
-    return folio_to_property
+    return folio_to_property, folio_to_anotacion
+
+
+def extract_escritura_from_anotacion(pdf_text, numero_anotacion):
+    """
+    Extrae el nombre de la escritura pública de una anotación específica en el PDF.
+    
+    Args:
+        pdf_text: Texto extraído del PDF
+        numero_anotacion: Número de anotación con 3 dígitos (ej: "001", "002", "003")
+        
+    Returns:
+        str: Nombre completo de la escritura (ej: "ESCRITURA 6833 DEL 28-12-1984") 
+             o string vacío "" si no se encuentra
+    """
+    # Buscar la sección de anotación con el número especificado
+    # Patrón: ANOTACION: Nro 001, ANOTACION: Nro 002, etc.
+    anotacion_pattern = rf'ANOTACION:\s*Nro\s+{numero_anotacion}'
+    anotacion_match = re.search(anotacion_pattern, pdf_text, re.IGNORECASE)
+    
+    if not anotacion_match:
+        return ""
+    
+    # Encontrar el inicio de la anotación
+    anotacion_start = anotacion_match.start()
+    
+    # Buscar el final de esta anotación (inicio de la siguiente anotación o fin del texto)
+    # Buscar la siguiente anotación
+    next_anotacion_pattern = r'ANOTACION:\s*Nro\s+\d{3}'
+    next_matches = list(re.finditer(next_anotacion_pattern, pdf_text[anotacion_start + 1:], re.IGNORECASE))
+    
+    if next_matches:
+        # Hay otra anotación después, usar su posición como límite
+        anotacion_end = anotacion_start + 1 + next_matches[0].start()
+    else:
+        # No hay más anotaciones, usar el resto del texto
+        anotacion_end = len(pdf_text)
+    
+    # Extraer el texto de esta anotación
+    anotacion_text = pdf_text[anotacion_start:anotacion_end]
+    
+    # Buscar el patrón de escritura dentro de la anotación
+    # Patrón flexible: Doc: ESCRITURA XXXX DEL/DE DD-MM-YYYY o DD/MM/YYYY
+    escritura_pattern = r'Doc:\s*(ESCRITURA\s+\d+\s+(?:DEL|DE)\s+\d{1,2}[-/]\d{1,2}[-/]\d{4})'
+    escritura_match = re.search(escritura_pattern, anotacion_text, re.IGNORECASE)
+    
+    if escritura_match:
+        return escritura_match.group(1).strip()
+    
+    return ""
 
 
 def extract_folios_from_matriculas(matriculas_text):
@@ -530,7 +586,7 @@ def extract_folios_from_matriculas(matriculas_text):
 
 def process_properties(matriculas_text, pdf_text):
     """
-    Procesa las matrículas y el PDF para extraer las propiedades.
+    Procesa las matrículas y el PDF para extraer las propiedades y escrituras.
     
     Args:
         matriculas_text: Texto del archivo matriculas.txt
@@ -538,14 +594,17 @@ def process_properties(matriculas_text, pdf_text):
         
     Returns:
         tuple: (property_data list, not_found list)
-            property_data: Lista de tuplas (property_name, circulo, folio)
+            property_data: Lista de tuplas (property_name, circulo, folio, escritura)
             not_found: Lista de folios no encontrados
     """
     # Extraer folios y círculos
     folio_to_circulo, folios = extract_folios_from_matriculas(matriculas_text)
     
-    # Extraer propiedades del PDF
-    folio_to_property = extract_properties_from_pdf(pdf_text)
+    # Extraer propiedades y números de anotación del PDF
+    folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+    
+    # Diccionario de caché para escrituras (anotacion -> escritura)
+    anotacion_to_escritura = {}
     
     # Generar datos estructurados
     property_data = []
@@ -555,10 +614,26 @@ def process_properties(matriculas_text, pdf_text):
         circulo = folio_to_circulo.get(folio, '')
         if folio in folio_to_property:
             property_name = folio_to_property[folio]
-            property_data.append((property_name, circulo, folio))
+            
+            # Obtener número de anotación para este folio
+            numero_anotacion = folio_to_anotacion.get(folio, "")
+            
+            # Buscar escritura usando caché
+            escritura = ""
+            if numero_anotacion:
+                # Verificar si ya tenemos esta escritura en caché
+                if numero_anotacion not in anotacion_to_escritura:
+                    # Buscar la escritura y guardarla en caché
+                    escritura = extract_escritura_from_anotacion(pdf_text, numero_anotacion)
+                    anotacion_to_escritura[numero_anotacion] = escritura
+                else:
+                    # Obtener del caché
+                    escritura = anotacion_to_escritura[numero_anotacion]
+            
+            property_data.append((property_name, circulo, folio, escritura))
         else:
             not_found.append(folio)
-            property_data.append(("NO ENCONTRADO", circulo, folio))
+            property_data.append(("NO ENCONTRADO", circulo, folio, ""))
     
     return property_data, not_found
 
@@ -568,7 +643,7 @@ def format_output(property_data, output_format='txt'):
     Formatea los datos de propiedades según el formato especificado.
     
     Args:
-        property_data: Lista de tuplas (property_name, circulo, folio)
+        property_data: Lista de tuplas (property_name, circulo, folio, escritura)
         output_format: 'txt' o 'csv'
         
     Returns:
@@ -585,16 +660,16 @@ def format_output(property_data, output_format='txt'):
         # Agregar headers
         csv_writer.writerow(["Inmueble", "folio", "EP", "escritura link", "paginas"])
         
-        # Solo llenamos Inmueble y folio (con numero_circulo-folio)
-        for property_name, circulo, folio in property_data:
-            csv_writer.writerow([property_name, f"{circulo}-{folio}", "", "", ""])
+        # Llenamos Inmueble, folio y EP (con numero_circulo-folio)
+        for property_name, circulo, folio, escritura in property_data:
+            csv_writer.writerow([property_name, f"{circulo}-{folio}", escritura, "", ""])
         
         # Obtener las líneas del CSV (ya con comillas donde sea necesario)
         csv_content = csv_buffer.getvalue()
         output_lines = csv_content.strip().split('\n')
     else:
         # Formato TXT: [nombre propiedad] [numero_circulo]-[folio]
-        for property_name, circulo, folio in property_data:
+        for property_name, circulo, folio, _ in property_data:
             output_lines.append(f"{property_name} {circulo}-{folio}")
     
     return output_lines
@@ -651,7 +726,7 @@ def create_google_sheet(property_data, title="Extractor de Propiedades", credent
     Crea un Google Sheet público y editable con los datos de propiedades.
     
     Args:
-        property_data: Lista de tuplas (property_name, circulo, folio)
+        property_data: Lista de tuplas (property_name, circulo, folio, escritura)
         title: Título del spreadsheet
         credentials: Credenciales OAuth o Service Account (opcional)
         
@@ -720,8 +795,8 @@ def create_google_sheet(property_data, title="Extractor de Propiedades", credent
     worksheet.append_row(headers)
     
     # Agregar datos
-    for property_name, circulo, folio in property_data:
-        row = [property_name, f"{circulo}-{folio}", "", "", ""]
+    for property_name, circulo, folio, escritura in property_data:
+        row = [property_name, f"{circulo}-{folio}", escritura, "", ""]
         worksheet.append_row(row)
     
     # Hacer el spreadsheet público y editable por todos
@@ -775,7 +850,6 @@ def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     carpeta_path = os.path.join(base_dir, proyecto_nombre)
     input_file = os.path.join(carpeta_path, 'matriculas.txt')
-    pdf_file = os.path.join(carpeta_path, 'certificado.pdf')
     extension = 'csv' if output_format == 'csv' else 'txt'
     output_file = os.path.join(carpeta_path, f'{proyecto_nombre}.{extension}')
 
@@ -784,9 +858,18 @@ def main():
         print(f"Error: No se encontró el archivo {input_file}")
         sys.exit(1)
 
+    # Buscar el archivo PDF (puede ser certificado.pdf o <nombre_proyecto>.pdf)
+    pdf_file = os.path.join(carpeta_path, 'certificado.pdf')
     if not os.path.exists(pdf_file):
-        print(f"Error: No se encontró el archivo {pdf_file}")
-        sys.exit(1)
+        # Intentar con el nombre del proyecto
+        pdf_file_alt = os.path.join(carpeta_path, f'{proyecto_nombre}.pdf')
+        if os.path.exists(pdf_file_alt):
+            pdf_file = pdf_file_alt
+        else:
+            print(f"Error: No se encontró el archivo PDF")
+            print(f"  Buscado: {os.path.join(carpeta_path, 'certificado.pdf')}")
+            print(f"  Buscado: {pdf_file_alt}")
+            sys.exit(1)
 
     # Leer el archivo de entrada
     with open(input_file, 'r', encoding='utf-8') as f:
