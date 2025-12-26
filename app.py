@@ -188,7 +188,7 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                     st.warning(f"⚠️ Se procesaron {pdf_count} de {len(certificado_files)} archivo(s) PDF. Algunos archivos pueden estar vacíos o protegidos.")
                 
                 # Usar la función reutilizable
-                property_data, not_found = process_properties(matriculas_text, pdf_text)
+                property_data, not_found, oficina_registro = process_properties(matriculas_text, pdf_text)
                 
                 # Calcular total de folios únicos desde las matrículas
                 folios = list(set([folio for _, folio in matches]))
@@ -198,11 +198,12 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                 st.session_state['property_data'] = property_data
                 st.session_state['not_found'] = not_found
                 st.session_state['folios'] = folios
+                st.session_state['oficina_registro'] = oficina_registro
                 st.session_state['data_processed'] = True  # Flag para saber que hay datos procesados
                 
                 # Formatear según el formato seleccionado
                 format_lower = output_format.lower()
-                output_lines = format_output(property_data, format_lower)
+                output_lines = format_output(property_data, format_lower, oficina_registro)
                 
                 # Mostrar resultados
                 st.success("✅ Procesamiento completado!")
@@ -356,9 +357,12 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                                         try:
                                             with st.spinner("Creando Google Sheet..."):
                                                 credentials = st.session_state['google_credentials']
+                                                oficina_registro = st.session_state.get('oficina_registro', '')
                                                 sheet_url = create_google_sheet(
                                                     data_to_use,
-                                                    title="Extractor de Propiedades"
+                                                    title="Extractor de Propiedades",
+                                                    credentials=credentials,
+                                                    oficina_registro=oficina_registro
                                                 )
                                                 
                                                 # Guardar el URL del sheet
@@ -467,10 +471,12 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                                 try:
                                     with st.spinner("Creando Google Sheet..."):
                                         credentials = st.session_state['google_credentials']
+                                        oficina_registro = st.session_state.get('oficina_registro', '')
                                         sheet_url = create_google_sheet(
                                             property_data,
                                             title="Extractor de Propiedades",
-                                            credentials=credentials
+                                            credentials=credentials,
+                                            oficina_registro=oficina_registro
                                         )
                                         
                                         # Guardar el link en archivo
@@ -524,7 +530,12 @@ if st.button("🚀 Procesar", type="primary", use_container_width=True):
                         if st.button("🔗 Generar Link de Google Sheets", type="secondary", use_container_width=True):
                             try:
                                 with st.spinner("Creando Google Sheet..."):
-                                    sheet_url = create_google_sheet(property_data, title="Extractor de Propiedades")
+                                    oficina_registro = st.session_state.get('oficina_registro', '')
+                                    sheet_url = create_google_sheet(
+                                        property_data, 
+                                        title="Extractor de Propiedades",
+                                        oficina_registro=oficina_registro
+                                    )
                                     
                                     # Guardar el link en archivo
                                     save_sheet_link(sheet_url)

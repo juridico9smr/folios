@@ -198,12 +198,9 @@ def extract_properties_from_pdf(pdf_text):
     while i < len(lines):
         line = lines[i]
         
-        # Saltar líneas que son headers/footers antes de buscar el patrón de folio
-        # Esto evita que headers interfieran con la detección
-        if is_footer_or_header(line):
-            i += 1
-            continue
-        
+        # Buscar el patrón de folio primero
+        # NO saltar líneas que contengan el patrón de folio, incluso si también tienen headers
+        # (los headers se limpiarán después durante el proceso de limpieza)
         match = re.search(pattern_folio_normal, line)
         
         # Si no encontramos con el patrón normal, intentar con el concatenado
@@ -434,36 +431,39 @@ def extract_properties_from_pdf(pdf_text):
         
         # Remover headers/footers que puedan estar concatenados en el texto
         # (a veces el PDF los concatena sin espacios)
+        # Buscar headers conocidos y eliminar desde ahí hasta el final
+        # Solo eliminar si viene después de un guión o espacio (para evitar eliminar parte del nombre)
         footer_cleanup_patterns = [
-                r'OFICINA DE REGISTRO[^\n]*',
-                r'CERTIFICADO DE TRADICION[^\n]*',
-                r'MATRICULA INMOBILIARIA[^\n]*',
-                r'La validez de este documento[^\n]*',
-                r'certificados\.supernotariado\.gov\.co[^\n]*',
-                r'Certificado generado con el Pin No:[^\n]*',
-                r'Nro Matrícula:[^\n]*',
-                r'Pagina \d+[^\n]*',
-                r'TURNO:[^\n]*',
-                r'Impreso el[^\n]*',
-                r'No tiene validez[^\n]*',
-                r'ESTE CERTIFICADO REFLEJA[^\n]*',
-                r'HASTA LA FECHA Y HORA[^\n]*',
-                r'SNR[^\n]*',
-                r'SUPERINTENDENCIA[^\n]*',
-                r'SALVEDADES:[^\n]*',
-                r'Información Anterior o Corregida[^\n]*',
-                r'Anotación[^\n]*',
-                r'Anotacion[^\n]*',
-                r'Nro corrección[^\n]*',
-                r'Nro correccion[^\n]*',
-                r'Radicación:[^\n]*',
-                r'Radicacion:[^\n]*',
-                r'CORREGIDO EN CABIDA[^\n]*',
-                r'CORREGIDO EN LINDEROS[^\n]*',
-                r'NUMERO DE DOCUMENTO[^\n]*',
-                r'VALE\.[^\n]*',
-                r'ART\.\d+[^\n]*',
-                r'LEY \d+[^\n]*',
+                r'\s*-\s*OFICINA DE REGISTRO.*$',
+                r'\s*OFICINA DE REGISTRO.*$',
+                r'\s*CERTIFICADO DE TRADICION.*$',
+                r'\s*MATRICULA INMOBILIARIA.*$',
+                r'\s*La validez de este documento.*$',
+                r'\s*certificados\.supernotariado\.gov\.co.*$',
+                r'\s*Certificado generado con el Pin No:.*$',
+                r'\s*Nro Matrícula:.*$',
+                r'\s*Pagina \d+.*$',
+                r'\s*TURNO:.*$',
+                r'\s*Impreso el.*$',
+                r'\s*No tiene validez.*$',
+                r'\s*ESTE CERTIFICADO REFLEJA.*$',
+                r'\s*HASTA LA FECHA Y HORA.*$',
+                r'\s*SNR.*$',
+                r'\s*SUPERINTENDENCIA.*$',
+                r'\s*SALVEDADES:.*$',
+                r'\s*Información Anterior o Corregida.*$',
+                r'\s*Anotación.*$',
+                r'\s*Anotacion.*$',
+                r'\s*Nro corrección.*$',
+                r'\s*Nro correccion.*$',
+                r'\s*Radicación:.*$',
+                r'\s*Radicacion:.*$',
+                r'\s*CORREGIDO EN CABIDA.*$',
+                r'\s*CORREGIDO EN LINDEROS.*$',
+                r'\s*NUMERO DE DOCUMENTO.*$',
+                r'\s*VALE\..*$',
+                r'\s*ART\.\d+.*$',
+                r'\s*LEY \d+.*$',
         ]
         
         for pattern in footer_cleanup_patterns:
@@ -471,6 +471,13 @@ def extract_properties_from_pdf(pdf_text):
         
         # Remover espacios múltiples
         property_name = re.sub(r'\s+', ' ', property_name)
+        
+        # Remover secuencias de "= = = = ..." que aparecen como separadores visuales
+        # Pueden aparecer con guiones antes (ej: "APARTAMENTO 1207- T3 - = = = = ...")
+        # y pueden terminar con un punto
+        # Patrón: busca guión opcional seguido de secuencia de "= = = = ..." (con espacios) y punto opcional al final
+        property_name = re.sub(r'\s*-\s*(?:\s*=\s*){2,}\.?\s*$', '', property_name).strip()
+        property_name = re.sub(r'(?:\s*=\s*){2,}\.?\s*$', '', property_name).strip()
         
         # Remover puntos y guiones al final si existen (con espacios antes)
         # PERO mantener el guión si es parte de una palabra (ej: "ETAPA -" o "PISO -")
@@ -501,6 +508,60 @@ def extract_properties_from_pdf(pdf_text):
         i += 1
     
     return folio_to_property, folio_to_anotacion
+
+
+def extract_oficina_registro(pdf_text):
+    """
+    Extrae la oficina de registro del certificado PDF.
+    Busca el texto "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE" 
+    y extrae lo que viene después (ej: "DOSQUEBRADAS").
+    Siempre está en la primera página.
+    
+    Args:
+        pdf_text: Texto extraído del PDF
+        
+    Returns:
+        str: Nombre de la oficina de registro (ej: "DOSQUEBRADAS") 
+             o string vacío "" si no se encuentra
+    """
+    # Buscar el patrón: "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE" seguido del nombre
+    # El nombre puede estar en la misma línea o en la siguiente línea
+    # Ejemplo: "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE DOSQUEBRADAS"
+    #          o "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE\nDOSQUEBRADAS"
+    
+    # Patrón que captura el nombre después de "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE"
+    # hasta encontrar un salto de línea, "CERTIFICADO", "MATRICULA" o fin de línea
+    pattern = r'OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE\s+([A-ZÁÉÍÓÚÑ\s]+?)(?:\s*\n|CERTIFICADO|MATRICULA|$)'
+    match = re.search(pattern, pdf_text, re.IGNORECASE | re.MULTILINE)
+    
+    if match:
+        oficina = match.group(1).strip()
+        # Limpiar espacios múltiples
+        oficina = re.sub(r'\s+', ' ', oficina)
+        # Remover cualquier texto que pueda venir después (como "CERTIFICADO DE TRADICION")
+        oficina = re.sub(r'\s+(CERTIFICADO|MATRICULA).*$', '', oficina, flags=re.IGNORECASE)
+        oficina = oficina.strip()
+        if oficina:
+            return oficina
+    
+    # Si no se encontró en la misma línea, intentar buscar en la siguiente línea
+    # Buscar la línea que contiene "OFICINA DE REGISTRO..." y tomar la siguiente línea
+    lines = pdf_text.split('\n')
+    for i, line in enumerate(lines):
+        if re.search(r'OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE', line, re.IGNORECASE):
+            # Si la línea siguiente existe y no es "CERTIFICADO" o "MATRICULA", usarla
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                # Verificar que no sea un header común
+                if next_line and not re.search(r'^(CERTIFICADO|MATRICULA)', next_line, re.IGNORECASE):
+                    # Limpiar y retornar
+                    oficina = re.sub(r'\s+', ' ', next_line)
+                    oficina = re.sub(r'\s+(CERTIFICADO|MATRICULA).*$', '', oficina, flags=re.IGNORECASE)
+                    oficina = oficina.strip()
+                    if oficina:
+                        return oficina
+    
+    return ""
 
 
 def extract_escritura_from_anotacion(pdf_text, numero_anotacion):
@@ -593,15 +654,19 @@ def process_properties(matriculas_text, pdf_text):
         pdf_text: Texto extraído del PDF
         
     Returns:
-        tuple: (property_data list, not_found list)
+        tuple: (property_data list, not_found list, oficina_registro str)
             property_data: Lista de tuplas (property_name, circulo, folio, escritura)
             not_found: Lista de folios no encontrados
+            oficina_registro: Nombre de la oficina de registro extraída del PDF
     """
     # Extraer folios y círculos
     folio_to_circulo, folios = extract_folios_from_matriculas(matriculas_text)
     
     # Extraer propiedades y números de anotación del PDF
     folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+    
+    # Extraer oficina de registro (siempre está en la primera página)
+    oficina_registro = extract_oficina_registro(pdf_text)
     
     # Diccionario de caché para escrituras (anotacion -> escritura)
     anotacion_to_escritura = {}
@@ -635,16 +700,17 @@ def process_properties(matriculas_text, pdf_text):
             not_found.append(folio)
             property_data.append(("NO ENCONTRADO", circulo, folio, ""))
     
-    return property_data, not_found
+    return property_data, not_found, oficina_registro
 
 
-def format_output(property_data, output_format='txt'):
+def format_output(property_data, output_format='txt', oficina_registro=''):
     """
     Formatea los datos de propiedades según el formato especificado.
     
     Args:
         property_data: Lista de tuplas (property_name, circulo, folio, escritura)
         output_format: 'txt' o 'csv'
+        oficina_registro: Nombre de la oficina de registro (solo para CSV)
         
     Returns:
         list: Lista de líneas formateadas
@@ -652,17 +718,17 @@ def format_output(property_data, output_format='txt'):
     output_lines = []
     
     if output_format.lower() == 'csv':
-        # Formato CSV: 5 columnas (Inmueble, folio, escritura publica, escritura, paginas)
+        # Formato CSV: 6 columnas (Inmueble, folio, EP, escritura link, paginas, oficina_registro)
         # Usar csv.writer para manejar correctamente comas y comillas dentro de los valores
         csv_buffer = io.StringIO()
         csv_writer = csv.writer(csv_buffer)
         
         # Agregar headers
-        csv_writer.writerow(["Inmueble", "folio", "EP", "escritura link", "paginas"])
+        csv_writer.writerow(["Inmueble", "folio", "EP", "escritura link", "paginas", "oficina_registro"])
         
-        # Llenamos Inmueble, folio y EP (con numero_circulo-folio)
+        # Llenamos Inmueble, folio, EP (con numero_circulo-folio) y oficina_registro
         for property_name, circulo, folio, escritura in property_data:
-            csv_writer.writerow([property_name, f"{circulo}-{folio}", escritura, "", ""])
+            csv_writer.writerow([property_name, f"{circulo}-{folio}", escritura, "", "", oficina_registro])
         
         # Obtener las líneas del CSV (ya con comillas donde sea necesario)
         csv_content = csv_buffer.getvalue()
@@ -721,7 +787,7 @@ def get_oauth_credentials(client_id, client_secret, redirect_uri, token=None):
         return flow
 
 
-def create_google_sheet(property_data, title="Extractor de Propiedades", credentials=None):
+def create_google_sheet(property_data, title="Extractor de Propiedades", credentials=None, oficina_registro=''):
     """
     Crea un Google Sheet público y editable con los datos de propiedades.
     
@@ -729,6 +795,7 @@ def create_google_sheet(property_data, title="Extractor de Propiedades", credent
         property_data: Lista de tuplas (property_name, circulo, folio, escritura)
         title: Título del spreadsheet
         credentials: Credenciales OAuth o Service Account (opcional)
+        oficina_registro: Nombre de la oficina de registro (opcional)
         
     Returns:
         str: URL del Google Sheet creado
@@ -791,12 +858,12 @@ def create_google_sheet(property_data, title="Extractor de Propiedades", credent
     worksheet = spreadsheet.sheet1
     
     # Preparar datos: headers y filas
-    headers = ["Inmueble", "folio", "EP", "escritura link", "paginas"]
+    headers = ["Inmueble", "folio", "EP", "escritura link", "paginas", "oficina_registro"]
     worksheet.append_row(headers)
     
     # Agregar datos
     for property_name, circulo, folio, escritura in property_data:
-        row = [property_name, f"{circulo}-{folio}", escritura, "", ""]
+        row = [property_name, f"{circulo}-{folio}", escritura, "", "", oficina_registro]
         worksheet.append_row(row)
     
     # Hacer el spreadsheet público y editable por todos
@@ -884,8 +951,8 @@ def main():
     print(f"PDF leído. Total de caracteres: {len(pdf_text)}")
 
     # Usar las funciones reutilizables
-    property_data, not_found = process_properties(input_content, pdf_text)
-    output_lines = format_output(property_data, output_format)
+    property_data, not_found, oficina_registro = process_properties(input_content, pdf_text)
+    output_lines = format_output(property_data, output_format, oficina_registro)
 
     # Escribir al archivo de salida
     with open(output_file, 'w', encoding='utf-8') as f:
@@ -895,6 +962,8 @@ def main():
     print(f"Total de folios procesados: {len(output_lines)}")
     print(f"Folios encontrados: {len(output_lines) - len(not_found)}")
     print(f"Folios no encontrados: {len(not_found)}")
+    if oficina_registro:
+        print(f"Oficina de registro: {oficina_registro}")
 
     if not_found:
         print(f"\nFolios no encontrados (primeros 10): {not_found[:10]}")

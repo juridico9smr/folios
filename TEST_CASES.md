@@ -157,16 +157,32 @@ MATRICULA INMOBILIARIA
 **Resultado esperado:** `APARTAMENTO NUMERO CUATROCIENTOS TRES (403) ETAPA II TORRE 1: UBICADO EN EL CUARTO PISO`
 **Nota:** Debe remover toda la información de headers/footers concatenada.
 
+### 22. Secuencias de Separadores Visuales Deben Ser Filtradas
+
+#### 22a. Con guión antes de la secuencia
+```
+5 -> 5566420 : APARTAMENTO 1207- T3 - = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =.
+```
+**Resultado esperado:** `APARTAMENTO 1207- T3`
+
+#### 22b. Sin guión antes de la secuencia
+```
+5 -> 5566420 : APARTAMENTO 1207- T3 = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =.
+```
+**Resultado esperado:** `APARTAMENTO 1207- T3`
+
+**Nota:** Debe remover las secuencias de "= = = = ..." que aparecen como separadores visuales, tanto si tienen guiones antes como si no, y pueden terminar con un punto.
+
 ## Casos de Incompletitud
 
-### 22. Propiedad Incompleta que Termina con "EN EL"
+### 23. Propiedad Incompleta que Termina con "EN EL"
 ```
 2 -> 262132 : APARTAMENTO NUMERO QUINIENTOS DOS (502) ETAPA II TORRE 1: UBICADO EN EL
 QUINTO PISO -
 ```
 **Resultado esperado:** `APARTAMENTO NUMERO QUINIENTOS DOS (502) ETAPA II TORRE 1: UBICADO EN EL QUINTO PISO`
 
-### 23. Propiedad Incompleta que Termina con "PISO"
+### 24. Propiedad Incompleta que Termina con "PISO"
 ```
 2 -> 261841 : APARTAMENTO NUMERO DOSCIENTOS UNO (201) TORRE 4: UBICADO EN EL PISO
 DOS -
@@ -175,7 +191,7 @@ DOS -
 
 ## Extracción de Escrituras Públicas (EP)
 
-### 24. Extracción de Escritura con Formato Estándar (DEL con guiones)
+### 25. Extracción de Escritura con Formato Estándar (DEL con guiones)
 ```
 3 -> 190172 : TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI
 ```
@@ -188,7 +204,7 @@ Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,35
 - Inmueble: `TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI`
 - EP: `ESCRITURA 4067 DEL 16-09-2022`
 
-### 25. Extracción de Escritura con Formato Alternativo (DE en lugar de DEL)
+### 26. Extracción de Escritura con Formato Alternativo (DE en lugar de DEL)
 ```
 1 -> 190173 : APARTAMENTO 104
 ```
@@ -201,7 +217,7 @@ Doc: ESCRITURA 6833 DE 28-12-1984 NOTARIA 10 DE CALI VALOR ACTO: $0
 - Inmueble: `APARTAMENTO 104`
 - EP: `ESCRITURA 6833 DE 28-12-1984`
 
-### 26. Extracción de Escritura con Fecha con Slashes
+### 27. Extracción de Escritura con Fecha con Slashes
 ```
 2 -> 190174 : APARTAMENTO 105
 ```
@@ -214,7 +230,7 @@ Doc: ESCRITURA 3723 DEL 25/07/1985 NOTARIA 10 DE CALI VALOR ACTO: $0
 - Inmueble: `APARTAMENTO 105`
 - EP: `ESCRITURA 3723 DEL 25/07/1985`
 
-### 27. Múltiples Folios Compartiendo la Misma Anotación (Validar Caché)
+### 28. Múltiples Folios Compartiendo la Misma Anotación (Validar Caché)
 ```
 3 -> 190172 : TORRE 9 - APARTAMENTO 103
 3 -> 190175 : TORRE 9 - APARTAMENTO 104
@@ -229,7 +245,7 @@ Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,35
 - Todos los folios deben tener la misma escritura en EP: `ESCRITURA 4067 DEL 16-09-2022`
 - **Nota:** La escritura debe buscarse solo una vez y reutilizarse para todos los folios con la misma anotación (caché).
 
-### 28. Caso donde No se Encuentra la Anotación
+### 29. Caso donde No se Encuentra la Anotación
 ```
 99 -> 999999 : APARTAMENTO 999
 ```
@@ -241,7 +257,7 @@ Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,35
 - Inmueble: `APARTAMENTO 999`
 - EP: `` (string vacío)
 
-### 29. Caso donde la Anotación Existe pero No Tiene Escritura
+### 30. Caso donde la Anotación Existe pero No Tiene Escritura
 ```
 5 -> 190177 : APARTAMENTO 106
 ```
@@ -255,7 +271,7 @@ ESPECIFICACION: OTRO: 999 ACLARACION
 - Inmueble: `APARTAMENTO 106`
 - EP: `` (string vacío)
 
-### 30. Extracción de Escritura con Formato Completo
+### 31. Extracción de Escritura con Formato Completo
 ```
 1 -> 190178 : APARTAMENTO 107
 ```

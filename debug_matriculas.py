@@ -135,11 +135,13 @@ def debug_matriculas(pdf_path, matriculas_text):
     # 6. Procesar todo junto
     print("5. PROCESANDO MATRÍCULAS + PDF")
     print("-"*80)
-    property_data, not_found = process_properties(matriculas_text, pdf_text)
+    property_data, not_found, oficina_registro = process_properties(matriculas_text, pdf_text)
     
     encontrados = [p for p in property_data if p[0] != "NO ENCONTRADO"]
     print(f"   Propiedades encontradas: {len(encontrados)}")
     print(f"   Propiedades NO encontradas: {len(not_found)}")
+    if oficina_registro:
+        print(f"   Oficina de registro: {oficina_registro}")
     
     if not_found:
         print(f"   Folios no encontrados: {not_found[:10]}{'...' if len(not_found) > 10 else ''}")
