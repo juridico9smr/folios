@@ -49,6 +49,20 @@ class TestExtractProperties(unittest.TestCase):
         self.assertIn("166319", result)
         self.assertEqual(result["166319"], "CRA.33 #31-35-BLOQUE 2-PISO 7 APTO.709")
     
+    def test_formato_punto_simple_variacion_1(self):
+        """Caso 3b: Formato con punto simple - Variación 1"""
+        pdf_text = "3 -> 166322. CRA.33 #31-35-BLOQUE 2-PISO 7 APTO.713"
+        result, _ = extract_properties_from_pdf(pdf_text)
+        self.assertIn("166322", result)
+        self.assertEqual(result["166322"], "CRA.33 #31-35-BLOQUE 2-PISO 7 APTO.713")
+    
+    def test_formato_punto_simple_variacion_2(self):
+        """Caso 3c: Formato con punto simple - Variación 2"""
+        pdf_text = "3 -> 166323. CRA.33 #31-05-BLOQUE 2-SOTANO-PARQ.SENCILLO 9701"
+        result, _ = extract_properties_from_pdf(pdf_text)
+        self.assertIn("166323", result)
+        self.assertEqual(result["166323"], "CRA.33 #31-05-BLOQUE 2-SOTANO-PARQ.SENCILLO 9701")
+    
     def test_formato_doble_punto(self):
         """Caso 4: Formato con doble punto (..)"""
         pdf_text = "3 -> 166457..CRA.33 #31-05-BLOQUE 2-SOTANO-CUARTO UTIL 9906"
@@ -321,8 +335,10 @@ class TestFormatOutput(unittest.TestCase):
         self.assertTrue(header_found, "Header CSV no encontrado")
         # Limpiar líneas de \r para comparación
         cleaned_lines = [line.rstrip('\r\n') for line in output_lines]
-        self.assertIn("APARTAMENTO 101,176-0998349,,,", cleaned_lines)
-        self.assertIn("TORRE 2,51N-123456,,,", cleaned_lines)
+        # CSV tiene 6 columnas: Inmueble, folio, EP, escritura link, paginas, oficina_registro
+        # Con valores vacíos: 5 commas separando 6 columnas
+        self.assertIn("APARTAMENTO 101,176-0998349,,,,", cleaned_lines)
+        self.assertIn("TORRE 2,51N-123456,,,,", cleaned_lines)
 
 
 def run_tests():

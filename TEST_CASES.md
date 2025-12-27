@@ -22,6 +22,18 @@ Este documento lista todos los casos de prueba que el extractor de propiedades d
 ```
 **Resultado esperado:** `CRA.33 #31-35-BLOQUE 2-PISO 7 APTO.709`
 
+### 3b. Formato con Punto Simple - Variación 1
+```
+3 -> 166322. CRA.33 #31-35-BLOQUE 2-PISO 7 APTO.713
+```
+**Resultado esperado:** `CRA.33 #31-35-BLOQUE 2-PISO 7 APTO.713`
+
+### 3c. Formato con Punto Simple - Variación 2
+```
+3 -> 166323. CRA.33 #31-05-BLOQUE 2-SOTANO-PARQ.SENCILLO 9701
+```
+**Resultado esperado:** `CRA.33 #31-05-BLOQUE 2-SOTANO-PARQ.SENCILLO 9701`
+
 ### 4. Formato con Doble Punto (`..`)
 ```
 3 -> 166457..CRA.33 #31-05-BLOQUE 2-SOTANO-CUARTO UTIL 9906
