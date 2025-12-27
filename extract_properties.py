@@ -514,52 +514,169 @@ def extract_oficina_registro(pdf_text):
     """
     Extrae la oficina de registro del certificado PDF.
     Busca el texto "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE" 
-    y extrae lo que viene después (ej: "DOSQUEBRADAS").
+    y extrae el nombre completo incluyendo el prefijo.
     Siempre está en la primera página.
+    
+    Estrategia:
+    1. Si se encuentra "CERTIFICADO DE TRADICION", buscar la oficina antes de él
+       (es un marcador confiable que aparece cerca de la oficina)
+    2. Si no se encuentra, usar palabras de parada generales
+    3. Validar que el resultado no exceda 200 caracteres
     
     Args:
         pdf_text: Texto extraído del PDF
         
     Returns:
-        str: Nombre de la oficina de registro (ej: "DOSQUEBRADAS") 
+        str: Nombre completo de la oficina de registro 
+             (ej: "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE") 
              o string vacío "" si no se encuentra
     """
-    # Buscar el patrón: "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE" seguido del nombre
-    # El nombre puede estar en la misma línea o en la siguiente línea
-    # Ejemplo: "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE DOSQUEBRADAS"
-    #          o "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE\nDOSQUEBRADAS"
+    # Limitar la búsqueda a los primeros 10000 caracteres (aproximadamente la primera página)
+    # para evitar capturar texto repetido de otras páginas
+    first_page_text = pdf_text[:10000]
     
-    # Patrón que captura el nombre después de "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE"
-    # hasta encontrar un salto de línea, "CERTIFICADO", "MATRICULA" o fin de línea
-    pattern = r'OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE\s+([A-ZÁÉÍÓÚÑ\s]+?)(?:\s*\n|CERTIFICADO|MATRICULA|$)'
-    match = re.search(pattern, pdf_text, re.IGNORECASE | re.MULTILINE)
+    # Marcador más confiable: "CERTIFICADO DE TRADICION" aparece cerca de la oficina
+    # Este es el marcador principal - si existe, la oficina está antes de él
+    certificado_tradicion_pattern = r'CERTIFICADO\s+DE\s+TRADICION'
+    certificado_match = re.search(certificado_tradicion_pattern, first_page_text, re.IGNORECASE)
+    
+    base_pattern = r'OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE\s+'
+    
+    # Estrategia 1: Si encontramos "CERTIFICADO DE TRADICION", buscar la oficina antes de él
+    # Esta es la estrategia más confiable ya que "CERTIFICADO DE TRADICION" es un marcador estable
+    if certificado_match:
+        # Buscar "OFICINA DE REGISTRO..." antes de "CERTIFICADO DE TRADICION"
+        # Limitar la búsqueda a un rango razonable (hasta 1000 caracteres antes para ser más flexible)
+        search_start = max(0, certificado_match.start() - 1000)
+        search_end = certificado_match.start()
+        search_text = first_page_text[search_start:search_end]
+        
+        # Buscar el patrón de oficina en este rango
+        # Detener explícitamente en "CERTIFICADO DE TRADICION" o palabras de parada comunes
+        # Usar un patrón que capture hasta encontrar CERTIFICADO DE TRADICION o stop words
+        stop_words_secondary = [
+            r'\bORIP\b',
+            r'\bSUPERINTENDENCIA\b',
+        ]
+        stop_pattern_secondary = '|'.join(stop_words_secondary)
+        
+        # Patrón principal: detener en CERTIFICADO DE TRADICION (prioritario)
+        # O en stop words secundarios si aparecen antes
+        pattern = rf'{base_pattern}([A-ZÁÉÍÓÚÑ\s]+?)(?=\s*(?:CERTIFICADO\s+DE\s+TRADICION|{stop_pattern_secondary})|\s*\n\s*(?:CERTIFICADO\s+DE\s+TRADICION|{stop_pattern_secondary})|$)'
+        match = re.search(pattern, search_text, re.IGNORECASE | re.MULTILINE)
+        
+        if match:
+            oficina_name = match.group(1).strip()
+            oficina_name = re.sub(r'\s+', ' ', oficina_name)
+            # Asegurar que no incluya "CERTIFICADO DE TRADICION" (por si acaso)
+            oficina_name = re.sub(r'\s+CERTIFICADO\s+DE\s+TRADICION.*$', '', oficina_name, flags=re.IGNORECASE)
+            oficina_name = oficina_name.strip()
+            
+            if oficina_name:
+                result = f"OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE {oficina_name}"
+                # Validar longitud
+                if len(result) <= 200:
+                    return result
+    
+    # Estrategia 2: Búsqueda general cuando no se encuentra "CERTIFICADO DE TRADICION"
+    # Usar palabras de parada generales
+    stop_words = [
+        r'\bORIP\b',
+        r'\bSUPERINTENDENCIA\b',
+        r'\bCERTIFICADO\s+DE\s+TRADICION\b',  # Incluir por si aparece después
+        r'\bCERTIFICADO\b',
+        r'\bMATRICULA\b',
+        r'\bMATRÍCULA\b',
+        r'\bDIRECCION\b',
+        r'\bDIRECCIÓN\b',
+    ]
+    
+    stop_pattern = '|'.join(stop_words)
+    pattern = rf'{base_pattern}([A-ZÁÉÍÓÚÑ\s]+?)(?=\s*(?:{stop_pattern})|\s*\n\s*(?:{stop_pattern})|$)'
+    
+    match = re.search(pattern, first_page_text, re.IGNORECASE | re.MULTILINE)
     
     if match:
-        oficina = match.group(1).strip()
+        # Construir el nombre completo incluyendo el prefijo
+        oficina_name = match.group(1).strip()
+        
         # Limpiar espacios múltiples
-        oficina = re.sub(r'\s+', ' ', oficina)
-        # Remover cualquier texto que pueda venir después (como "CERTIFICADO DE TRADICION")
-        oficina = re.sub(r'\s+(CERTIFICADO|MATRICULA).*$', '', oficina, flags=re.IGNORECASE)
-        oficina = oficina.strip()
-        if oficina:
-            return oficina
+        oficina_name = re.sub(r'\s+', ' ', oficina_name)
+        oficina_name = oficina_name.strip()
+        
+        # Remover explícitamente "CERTIFICADO DE TRADICION" si quedó al final (prioritario)
+        oficina_name = re.sub(r'\s+CERTIFICADO\s+DE\s+TRADICION.*$', '', oficina_name, flags=re.IGNORECASE)
+        # Remover otras palabras de parada que puedan quedar
+        for stop_word in stop_words:
+            if stop_word != r'\bCERTIFICADO\s+DE\s+TRADICION\b':  # Ya lo removimos arriba
+                oficina_name = re.sub(rf'\s+{stop_word}.*$', '', oficina_name, flags=re.IGNORECASE)
+        oficina_name = oficina_name.strip()
+        
+        if oficina_name:
+            # Construir el resultado completo
+            result = f"OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE {oficina_name}"
+            
+            # Validar que no sea demasiado largo (más de 200 caracteres probablemente es incorrecto)
+            if len(result) > 200:
+                # Si es muy largo, truncar de manera inteligente
+                # Buscar la última palabra completa antes de 200 caracteres
+                words = result.split()
+                truncated = []
+                current_length = 0
+                prefix = "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE"
+                for word in oficina_name.split():
+                    test_length = len(prefix) + 1 + current_length + len(word) + 1
+                    if test_length > 200:
+                        break
+                    truncated.append(word)
+                    current_length += len(word) + 1
+                
+                if truncated:
+                    result = f"{prefix} {' '.join(truncated)}"
+                else:
+                    # Si no podemos truncar inteligentemente, retornar vacío
+                    return ""
+            
+            return result
     
-    # Si no se encontró en la misma línea, intentar buscar en la siguiente línea
-    # Buscar la línea que contiene "OFICINA DE REGISTRO..." y tomar la siguiente línea
-    lines = pdf_text.split('\n')
+    # Estrategia 3: Búsqueda línea por línea (para casos donde el nombre está en la siguiente línea)
+    lines = first_page_text.split('\n')
     for i, line in enumerate(lines):
         if re.search(r'OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE', line, re.IGNORECASE):
-            # Si la línea siguiente existe y no es "CERTIFICADO" o "MATRICULA", usarla
+            # Buscar el nombre en la misma línea o en la siguiente
+            # Priorizar detener en "CERTIFICADO DE TRADICION" si existe
+            same_line_pattern = rf'{base_pattern}([A-ZÁÉÍÓÚÑ\s]+?)(?=\s*(?:CERTIFICADO\s+DE\s+TRADICION|ORIP|SUPERINTENDENCIA|CERTIFICADO|MATRICULA|MATRÍCULA|DIRECCION|DIRECCIÓN)|$)'
+            same_line_match = re.search(same_line_pattern, line, re.IGNORECASE)
+            if same_line_match:
+                oficina_name = same_line_match.group(1).strip()
+                oficina_name = re.sub(r'\s+', ' ', oficina_name)
+                # Remover "CERTIFICADO DE TRADICION" si quedó (prioritario)
+                oficina_name = re.sub(r'\s+CERTIFICADO\s+DE\s+TRADICION.*$', '', oficina_name, flags=re.IGNORECASE)
+                oficina_name = oficina_name.strip()
+                if oficina_name:
+                    result = f"OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE {oficina_name}"
+                    if len(result) <= 200:
+                        return result
+            
+            # Si no se encontró en la misma línea, intentar en la siguiente
+            # Pero solo si la siguiente línea no es "CERTIFICADO DE TRADICION" u otra palabra de parada
             if i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
-                # Verificar que no sea un header común
-                if next_line and not re.search(r'^(CERTIFICADO|MATRICULA)', next_line, re.IGNORECASE):
-                    # Limpiar y retornar
-                    oficina = re.sub(r'\s+', ' ', next_line)
-                    oficina = re.sub(r'\s+(CERTIFICADO|MATRICULA).*$', '', oficina, flags=re.IGNORECASE)
-                    oficina = oficina.strip()
-                    if oficina:
-                        return oficina
+                # Verificar que no sea "CERTIFICADO DE TRADICION" u otra palabra de parada
+                if next_line and not re.search(r'^(CERTIFICADO\s+DE\s+TRADICION|CERTIFICADO|MATRICULA|MATRÍCULA|ORIP|SUPERINTENDENCIA)', next_line, re.IGNORECASE):
+                    # Limpiar y construir resultado
+                    oficina_name = re.sub(r'\s+', ' ', next_line)
+                    # Remover cualquier palabra de parada que pueda estar al final
+                    # Priorizar "CERTIFICADO DE TRADICION"
+                    oficina_name = re.sub(r'\s+CERTIFICADO\s+DE\s+TRADICION.*$', '', oficina_name, flags=re.IGNORECASE)
+                    # Remover otras palabras de parada
+                    for stop_word in ['ORIP', 'SUPERINTENDENCIA', 'CERTIFICADO', 'MATRICULA', 'MATRÍCULA', 'DIRECCION', 'DIRECCIÓN']:
+                        oficina_name = re.sub(rf'\s+{stop_word}.*$', '', oficina_name, flags=re.IGNORECASE)
+                    oficina_name = oficina_name.strip()
+                    if oficina_name:
+                        result = f"OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE {oficina_name}"
+                        if len(result) <= 200:
+                            return result
     
     return ""
 
@@ -619,18 +736,28 @@ def extract_folios_from_matriculas(matriculas_text):
     Maneja formatos como:
     - 176-0998349 (formato tradicional)
     - 51N-0998349 (formato con letra después del número)
+    - 01N - 5537580 (formato con espacios alrededor del guión)
+    
+    El script normaliza automáticamente los espacios alrededor del guión,
+    aceptando formatos como "01N-5537580", "01N - 5537580", "01N- 5537580", etc.
+    y siempre produce la salida en formato normalizado "CIRCULO-FOLIO" sin espacios.
     
     Args:
         matriculas_text: Texto del archivo matriculas.txt
         
     Returns:
         tuple: (folio_to_circulo dict, folios list)
+            - folio_to_circulo: Diccionario que mapea folio -> círculo
+            - folios: Lista de folios extraídos (sin duplicados)
     """
-    # Patrón que acepta números opcionalmente seguidos de letras (ej: 176, 51N)
+    # Patrón que acepta números opcionalmente seguidos de letras (ej: 176, 51N, 01N)
     # Acepta espacios opcionales antes y después del guión para manejar casos como:
     # - "307-111067" (formato normal)
     # - "307- 111067" (con espacio después del guión)
     # - "307 - 111067" (con espacios antes y después)
+    # - "01N - 5537580" (círculo con letra y espacios)
+    # El patrón \s*-\s* captura cualquier cantidad de espacios (incluyendo cero)
+    # alrededor del guión, permitiendo normalizar el formato en la salida
     folio_pattern = r'(\d+[A-Z]?)\s*-\s*(\d+)'
     matches = re.findall(folio_pattern, matriculas_text)
     
@@ -638,6 +765,10 @@ def extract_folios_from_matriculas(matriculas_text):
     folios = []
     
     for circulo, folio in matches:
+        # Normalizar: remover espacios del círculo y folio (por si acaso)
+        circulo = circulo.strip()
+        folio = folio.strip()
+        
         if folio not in folio_to_circulo:
             folio_to_circulo[folio] = circulo
             folios.append(folio)

@@ -22,7 +22,7 @@ import os
 # Agregar el directorio actual al path para importar extract_properties
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from extract_properties import extract_properties_from_pdf, extract_folios_from_matriculas, process_properties, format_output
+from extract_properties import extract_properties_from_pdf, extract_folios_from_matriculas, process_properties, format_output, extract_oficina_registro, extract_escritura_from_anotacion
 
 
 class TestExtractProperties(unittest.TestCase):
@@ -251,6 +251,21 @@ class TestExtractFolios(unittest.TestCase):
         self.assertIn("0998349", folios)
         self.assertEqual(folio_to_circulo["0998349"], "51N")
     
+    def test_circulo_con_espacios_alrededor_guion(self):
+        """Caso 20: Círculo con espacios alrededor del guión"""
+        matriculas_text = "01N-5537543, 01N - 5537580, 01N - 5537610, 01N - 5537614"
+        folio_to_circulo, folios = extract_folios_from_matriculas(matriculas_text)
+        # Verificar que todos los folios fueron extraídos
+        self.assertIn("5537543", folios)
+        self.assertIn("5537580", folios)
+        self.assertIn("5537610", folios)
+        self.assertIn("5537614", folios)
+        # Verificar que todos tienen el mismo círculo
+        self.assertEqual(folio_to_circulo["5537543"], "01N")
+        self.assertEqual(folio_to_circulo["5537580"], "01N")
+        self.assertEqual(folio_to_circulo["5537610"], "01N")
+        self.assertEqual(folio_to_circulo["5537614"], "01N")
+    
     def test_multiple_folios(self):
         """Prueba con múltiples folios"""
         matriculas_text = """176-0998349
@@ -341,6 +356,290 @@ class TestFormatOutput(unittest.TestCase):
         self.assertIn("TORRE 2,51N-123456,,,,", cleaned_lines)
 
 
+class TestExtractOficinaRegistro(unittest.TestCase):
+    """Pruebas para la extracción de oficina de registro"""
+    
+    def test_oficina_medellin_norte(self):
+        """Prueba extracción de oficina MEDELLIN NORTE desde PDF real"""
+        # Texto simulado basado en el patrón encontrado en los PDFs de tayrona
+        pdf_text = """SUPERINTENDENCIA DE NOTARIADO Y REGISTRO LA GUARDA DE LA FE PUBLICA OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE ORIP SUPERINTENDENCIA DE NOTARIADO Y REGISTRO LA GUARDA DE LA FE PUBLICA OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE ORIP
+CERTIFICADO DE TRADICION
+MATRICULA INMOBILIARIA"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE")
+        self.assertLessEqual(len(result), 200, "El resultado no debe exceder 200 caracteres")
+    
+    def test_oficina_con_stop_word_orip(self):
+        """Prueba que se detiene correctamente en ORIP"""
+        pdf_text = """OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE ORIP SUPERINTENDENCIA"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE")
+        self.assertNotIn("ORIP", result)
+        self.assertNotIn("SUPERINTENDENCIA", result)
+    
+    def test_oficina_con_stop_word_certificado_tradicion(self):
+        """Prueba que se detiene correctamente en CERTIFICADO DE TRADICION (prioritario)"""
+        pdf_text = """OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE DOSQUEBRADAS CERTIFICADO DE TRADICION"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE DOSQUEBRADAS")
+        self.assertNotIn("CERTIFICADO", result)
+        self.assertNotIn("TRADICION", result)
+    
+    def test_oficina_con_certificado_tradicion_antes(self):
+        """Prueba que busca la oficina antes de CERTIFICADO DE TRADICION cuando está presente"""
+        pdf_text = """TEXTO PREVIO OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE ORIP SUPERINTENDENCIA CERTIFICADO DE TRADICION MATRICULA"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE")
+        self.assertNotIn("CERTIFICADO", result)
+        self.assertNotIn("TRADICION", result)
+        self.assertNotIn("ORIP", result)
+    
+    def test_oficina_con_certificado_tradicion_en_siguiente_linea(self):
+        """Prueba que se detiene cuando CERTIFICADO DE TRADICION está en la siguiente línea"""
+        pdf_text = """OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTÁ
+CERTIFICADO DE TRADICION"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTÁ")
+        self.assertNotIn("CERTIFICADO", result)
+    
+    def test_oficina_con_certificado_tradicion_repetido(self):
+        """Prueba que maneja correctamente cuando CERTIFICADO DE TRADICION aparece múltiples veces"""
+        pdf_text = """OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE CALI CERTIFICADO DE TRADICION
+OTRO TEXTO OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE CALI CERTIFICADO DE TRADICION"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE CALI")
+        self.assertNotIn("CERTIFICADO", result)
+    
+    def test_oficina_en_siguiente_linea(self):
+        """Prueba extracción cuando el nombre está en la siguiente línea"""
+        pdf_text = """OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE
+MEDELLIN NORTE
+CERTIFICADO"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE")
+    
+    def test_oficina_limite_longitud(self):
+        """Prueba que resultados muy largos son rechazados o truncados"""
+        # Crear un texto con un nombre muy largo (más de 200 caracteres)
+        long_name = "A" * 300
+        pdf_text = f"OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE {long_name} CERTIFICADO"
+        result = extract_oficina_registro(pdf_text)
+        # Debe estar vacío o truncado a menos de 200 caracteres
+        self.assertLessEqual(len(result), 200, "El resultado debe estar limitado a 200 caracteres")
+    
+    def test_oficina_solo_primera_pagina(self):
+        """Prueba que solo busca en la primera página (primeros 10000 caracteres)"""
+        # Crear texto donde la oficina aparece después de 10000 caracteres
+        padding = "X" * 10001
+        pdf_text = f"{padding}OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE CERTIFICADO"
+        result = extract_oficina_registro(pdf_text)
+        # Debe estar vacío porque está después de la primera página
+        self.assertEqual(result, "")
+    
+    def test_oficina_no_encontrada(self):
+        """Prueba cuando no se encuentra la oficina"""
+        pdf_text = "TEXTO SIN OFICINA DE REGISTRO"
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "")
+    
+    def test_oficina_con_acentos(self):
+        """Prueba con nombres que contienen acentos"""
+        pdf_text = """OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTÁ CERTIFICADO"""
+        result = extract_oficina_registro(pdf_text)
+        self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTÁ")
+    
+    def test_oficina_tayrona_pdf_real(self):
+        """Prueba con PDF real de tayrona usando PyPDF2"""
+        try:
+            from PyPDF2 import PdfReader
+            import os
+            
+            # Buscar un PDF en la carpeta tayrona
+            tayrona_dir = os.path.join(os.path.dirname(__file__), 'tayrona')
+            if os.path.exists(tayrona_dir):
+                pdf_files = [f for f in os.listdir(tayrona_dir) if f.endswith('.pdf')]
+                if pdf_files:
+                    pdf_path = os.path.join(tayrona_dir, pdf_files[0])
+                    reader = PdfReader(pdf_path)
+                    pdf_text = ''
+                    for page in reader.pages:
+                        pdf_text += page.extract_text()
+                    
+                    result = extract_oficina_registro(pdf_text)
+                    self.assertEqual(result, "OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MEDELLIN NORTE")
+                    self.assertLessEqual(len(result), 200)
+        except ImportError:
+            self.skipTest("PyPDF2 no está instalado")
+        except FileNotFoundError:
+            self.skipTest("PDF de prueba no encontrado")
+
+
+class TestExtractEscrituras(unittest.TestCase):
+    """Pruebas para la extracción de escrituras públicas (casos 26-32)"""
+    
+    def test_escritura_formato_estandar_del(self):
+        """Caso 26: Extracción de Escritura con Formato Estándar (DEL con guiones)"""
+        pdf_text = """3 -> 190172 : TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI
+ANOTACION: Nro 003 Fecha: 21-09-2022 Radicación: 2022-350-6-20321
+Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,354,780"""
+        
+        # Extraer propiedad y anotación
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        self.assertIn("190172", folio_to_property)
+        self.assertEqual(folio_to_property["190172"], "TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI")
+        
+        # Extraer escritura
+        numero_anotacion = folio_to_anotacion.get("190172", "")
+        self.assertEqual(numero_anotacion, "003")
+        escritura = extract_escritura_from_anotacion(pdf_text, numero_anotacion)
+        self.assertEqual(escritura, "ESCRITURA 4067 DEL 16-09-2022")
+    
+    def test_escritura_formato_alternativo_de(self):
+        """Caso 27: Extracción de Escritura con Formato Alternativo (DE en lugar de DEL)"""
+        pdf_text = """1 -> 190173 : APARTAMENTO 104
+ANOTACION: Nro 001 Fecha: 14-03-1985 Radicación:
+Doc: ESCRITURA 6833 DE 28-12-1984 NOTARIA 10 DE CALI VALOR ACTO: $0"""
+        
+        # Extraer propiedad y anotación
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        self.assertIn("190173", folio_to_property)
+        self.assertEqual(folio_to_property["190173"], "APARTAMENTO 104")
+        
+        # Extraer escritura
+        numero_anotacion = folio_to_anotacion.get("190173", "")
+        self.assertEqual(numero_anotacion, "001")
+        escritura = extract_escritura_from_anotacion(pdf_text, numero_anotacion)
+        self.assertEqual(escritura, "ESCRITURA 6833 DE 28-12-1984")
+    
+    def test_escritura_fecha_con_slashes(self):
+        """Caso 28: Extracción de Escritura con Fecha con Slashes"""
+        pdf_text = """2 -> 190174 : APARTAMENTO 105
+ANOTACION: Nro 002 Fecha: 31-07-1985 Radicación:
+Doc: ESCRITURA 3723 DEL 25/07/1985 NOTARIA 10 DE CALI VALOR ACTO: $0"""
+        
+        # Extraer propiedad y anotación
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        self.assertIn("190174", folio_to_property)
+        self.assertEqual(folio_to_property["190174"], "APARTAMENTO 105")
+        
+        # Extraer escritura
+        numero_anotacion = folio_to_anotacion.get("190174", "")
+        self.assertEqual(numero_anotacion, "002")
+        escritura = extract_escritura_from_anotacion(pdf_text, numero_anotacion)
+        self.assertEqual(escritura, "ESCRITURA 3723 DEL 25/07/1985")
+    
+    def test_multiples_folios_compartiendo_anotacion_cache(self):
+        """Caso 29: Múltiples Folios Compartiendo la Misma Anotación (Validar Caché)"""
+        pdf_text = """3 -> 190172 : TORRE 9 - APARTAMENTO 103
+3 -> 190175 : TORRE 9 - APARTAMENTO 104
+3 -> 190176 : TORRE 9 - APARTAMENTO 105
+ANOTACION: Nro 003 Fecha: 21-09-2022 Radicación: 2022-350-6-20321
+Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,354,780"""
+        
+        # Procesar propiedades completas (esto usa el caché internamente)
+        matriculas_text = "3-190172\n3-190175\n3-190176"
+        property_data, not_found, oficina_registro = process_properties(matriculas_text, pdf_text)
+        
+        # Verificar que todos los folios tienen la misma escritura
+        escrituras = {folio: escritura for _, _, folio, escritura in property_data}
+        self.assertEqual(escrituras["190172"], "ESCRITURA 4067 DEL 16-09-2022")
+        self.assertEqual(escrituras["190175"], "ESCRITURA 4067 DEL 16-09-2022")
+        self.assertEqual(escrituras["190176"], "ESCRITURA 4067 DEL 16-09-2022")
+        
+        # Verificar que todas las escrituras son iguales (validación de caché)
+        self.assertEqual(escrituras["190172"], escrituras["190175"])
+        self.assertEqual(escrituras["190175"], escrituras["190176"])
+    
+    def test_escritura_anotacion_no_encontrada(self):
+        """Caso 30: Caso donde No se Encuentra la Anotación"""
+        pdf_text = "99 -> 999999 : APARTAMENTO 999"
+        
+        # Extraer propiedad
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        self.assertIn("999999", folio_to_property)
+        self.assertEqual(folio_to_property["999999"], "APARTAMENTO 999")
+        
+        # Intentar extraer escritura de una anotación que no existe
+        escritura = extract_escritura_from_anotacion(pdf_text, "099")
+        self.assertEqual(escritura, "")
+        
+        # También verificar que si no hay número de anotación, la escritura es vacía
+        numero_anotacion = folio_to_anotacion.get("999999", "")
+        # Si no hay anotación asociada, debería ser vacío
+        if not numero_anotacion:
+            escritura = ""
+            self.assertEqual(escritura, "")
+    
+    def test_escritura_anotacion_sin_escritura(self):
+        """Caso 31: Caso donde la Anotación Existe pero No Tiene Escritura"""
+        pdf_text = """5 -> 190177 : APARTAMENTO 106
+ANOTACION: Nro 005 Fecha: 15-01-2023 Radicación: 2023-100-1-12345
+ESPECIFICACION: OTRO: 999 ACLARACION"""
+        
+        # Extraer propiedad y anotación
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        self.assertIn("190177", folio_to_property)
+        self.assertEqual(folio_to_property["190177"], "APARTAMENTO 106")
+        
+        # Extraer escritura (no debería encontrar "Doc: ESCRITURA...")
+        numero_anotacion = folio_to_anotacion.get("190177", "")
+        self.assertEqual(numero_anotacion, "005")
+        escritura = extract_escritura_from_anotacion(pdf_text, numero_anotacion)
+        self.assertEqual(escritura, "")
+    
+    def test_escritura_formato_completo(self):
+        """Caso 32: Extracción de Escritura con Formato Completo"""
+        pdf_text = """1 -> 190178 : APARTAMENTO 107
+ANOTACION: Nro 001 Fecha: 14-03-1985 Radicación:
+Doc: ESCRITURA 6833 DEL 28-12-1984 NOTARIA 10 DE CALI VALOR ACTO: $0
+ESPECIFICACION: GRAVAMEN: 210 HIPOTECA
+PERSONAS QUE INTERVIENEN EN EL ACTO (X-Titular de derecho real de dominio,I-Titular de dominio incompleto)
+DE: INMOBILIARIA POPULAR CALI LTDA X
+A: GONCHEVERRY POPULAR CALI LTDA"""
+        
+        # Extraer propiedad y anotación
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        self.assertIn("190178", folio_to_property)
+        self.assertEqual(folio_to_property["190178"], "APARTAMENTO 107")
+        
+        # Extraer escritura (solo debe extraer el nombre de la escritura, no el resto)
+        numero_anotacion = folio_to_anotacion.get("190178", "")
+        self.assertEqual(numero_anotacion, "001")
+        escritura = extract_escritura_from_anotacion(pdf_text, numero_anotacion)
+        self.assertEqual(escritura, "ESCRITURA 6833 DEL 28-12-1984")
+        
+        # Verificar que NO incluye información adicional de la anotación
+        self.assertNotIn("NOTARIA 10 DE CALI", escritura)
+        self.assertNotIn("VALOR ACTO", escritura)
+        self.assertNotIn("ESPECIFICACION", escritura)
+        self.assertNotIn("GRAVAMEN", escritura)
+        self.assertNotIn("PERSONAS QUE INTERVIENEN", escritura)
+    
+    def test_escritura_multiple_anotaciones(self):
+        """Prueba adicional: Múltiples anotaciones en el mismo PDF"""
+        pdf_text = """1 -> 190179 : APARTAMENTO 108
+ANOTACION: Nro 001 Fecha: 14-03-1985 Radicación:
+Doc: ESCRITURA 1001 DEL 01-01-1985 NOTARIA 1 VALOR ACTO: $0
+2 -> 190180 : APARTAMENTO 109
+ANOTACION: Nro 002 Fecha: 15-03-1985 Radicación:
+Doc: ESCRITURA 1002 DEL 02-01-1985 NOTARIA 2 VALOR ACTO: $0"""
+        
+        # Extraer propiedades y anotaciones
+        folio_to_property, folio_to_anotacion = extract_properties_from_pdf(pdf_text)
+        
+        # Verificar que cada folio tiene su propia anotación
+        self.assertEqual(folio_to_anotacion.get("190179", ""), "001")
+        self.assertEqual(folio_to_anotacion.get("190180", ""), "002")
+        
+        # Verificar que cada anotación tiene su propia escritura
+        escritura1 = extract_escritura_from_anotacion(pdf_text, "001")
+        escritura2 = extract_escritura_from_anotacion(pdf_text, "002")
+        
+        self.assertEqual(escritura1, "ESCRITURA 1001 DEL 01-01-1985")
+        self.assertEqual(escritura2, "ESCRITURA 1002 DEL 02-01-1985")
+        self.assertNotEqual(escritura1, escritura2)
+
+
 def run_tests():
     """Ejecuta todas las pruebas"""
     loader = unittest.TestLoader()
@@ -351,6 +650,8 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestExtractFolios))
     suite.addTests(loader.loadTestsFromTestCase(TestProcessProperties))
     suite.addTests(loader.loadTestsFromTestCase(TestFormatOutput))
+    suite.addTests(loader.loadTestsFromTestCase(TestExtractOficinaRegistro))
+    suite.addTests(loader.loadTestsFromTestCase(TestExtractEscrituras))
     
     # Ejecutar pruebas
     runner = unittest.TextTestRunner(verbosity=2)

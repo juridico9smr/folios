@@ -148,9 +148,20 @@ QUINTO PISO -
 ```
 **Resultado esperado:** Círculo: `51N`, Folio: `0998349`
 
+### 20. Círculo con Espacios alrededor del Guión
+```
+01N-5537543, 01N - 5537580, 01N - 5537610, 01N - 5537614
+```
+**Resultado esperado:** 
+- Círculo: `01N`, Folio: `5537543` (sin espacios)
+- Círculo: `01N`, Folio: `5537580` (espacios removidos)
+- Círculo: `01N`, Folio: `5537610` (espacios removidos)
+- Círculo: `01N`, Folio: `5537614` (espacios removidos)
+**Nota:** El script debe aceptar espacios antes y/o después del guión (`-`) y normalizar el formato a `CIRCULO-FOLIO` sin espacios en la salida.
+
 ## Filtrado de Headers/Footers
 
-### 20. Headers/Footers Deben Ser Filtrados
+### 21. Headers/Footers Deben Ser Filtrados
 ```
 2 -> 262173 : APARTAMENTO NUMERO OCHOCIENTOS DIEZ (810) ETAPA II TORRE 1: UBICADO EN
 EL OCTAVO PISO -
@@ -162,22 +173,22 @@ MATRICULA INMOBILIARIA
 **Resultado esperado:** `APARTAMENTO NUMERO OCHOCIENTOS DIEZ (810) ETAPA II TORRE 1: UBICADO EN EL OCTAVO PISO`
 **Nota:** No debe incluir los headers/footers en el resultado.
 
-### 21. Salvedades Deben Ser Filtradas
+### 22. Salvedades Deben Ser Filtradas
 ```
 2 -> 262173 : APARTAMENTO NUMERO CUATROCIENTOS TRES (403) ETAPA II TORRE 1: UBICADO EN EL CUARTO PISO - OFICINA DE REGISTRO DE INSTRUMENTOS PUBLICOS DE MANIZALES CERTIFICADO DE TRADICION MATRICULA INMOBILIARIALa validez de este documento podrá verificarse en la página certificados.supernotariado.gov.co Certificado generado con el Pin No: 2511195352124777447Nro Matrícula: 100-256825,100-262122,,,
 ```
 **Resultado esperado:** `APARTAMENTO NUMERO CUATROCIENTOS TRES (403) ETAPA II TORRE 1: UBICADO EN EL CUARTO PISO`
 **Nota:** Debe remover toda la información de headers/footers concatenada.
 
-### 22. Secuencias de Separadores Visuales Deben Ser Filtradas
+### 23. Secuencias de Separadores Visuales Deben Ser Filtradas
 
-#### 22a. Con guión antes de la secuencia
+#### 23a. Con guión antes de la secuencia
 ```
 5 -> 5566420 : APARTAMENTO 1207- T3 - = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =.
 ```
 **Resultado esperado:** `APARTAMENTO 1207- T3`
 
-#### 22b. Sin guión antes de la secuencia
+#### 23b. Sin guión antes de la secuencia
 ```
 5 -> 5566420 : APARTAMENTO 1207- T3 = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =.
 ```
@@ -187,14 +198,14 @@ MATRICULA INMOBILIARIA
 
 ## Casos de Incompletitud
 
-### 23. Propiedad Incompleta que Termina con "EN EL"
+### 24. Propiedad Incompleta que Termina con "EN EL"
 ```
 2 -> 262132 : APARTAMENTO NUMERO QUINIENTOS DOS (502) ETAPA II TORRE 1: UBICADO EN EL
 QUINTO PISO -
 ```
 **Resultado esperado:** `APARTAMENTO NUMERO QUINIENTOS DOS (502) ETAPA II TORRE 1: UBICADO EN EL QUINTO PISO`
 
-### 24. Propiedad Incompleta que Termina con "PISO"
+### 25. Propiedad Incompleta que Termina con "PISO"
 ```
 2 -> 261841 : APARTAMENTO NUMERO DOSCIENTOS UNO (201) TORRE 4: UBICADO EN EL PISO
 DOS -
@@ -203,7 +214,7 @@ DOS -
 
 ## Extracción de Escrituras Públicas (EP)
 
-### 25. Extracción de Escritura con Formato Estándar (DEL con guiones)
+### 26. Extracción de Escritura con Formato Estándar (DEL con guiones)
 ```
 3 -> 190172 : TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI
 ```
@@ -216,7 +227,7 @@ Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,35
 - Inmueble: `TORRE 9 - APARTAMENTO 103 - PROYECTO MODIGLIANI`
 - EP: `ESCRITURA 4067 DEL 16-09-2022`
 
-### 26. Extracción de Escritura con Formato Alternativo (DE en lugar de DEL)
+### 27. Extracción de Escritura con Formato Alternativo (DE en lugar de DEL)
 ```
 1 -> 190173 : APARTAMENTO 104
 ```
@@ -229,7 +240,7 @@ Doc: ESCRITURA 6833 DE 28-12-1984 NOTARIA 10 DE CALI VALOR ACTO: $0
 - Inmueble: `APARTAMENTO 104`
 - EP: `ESCRITURA 6833 DE 28-12-1984`
 
-### 27. Extracción de Escritura con Fecha con Slashes
+### 28. Extracción de Escritura con Fecha con Slashes
 ```
 2 -> 190174 : APARTAMENTO 105
 ```
@@ -242,7 +253,7 @@ Doc: ESCRITURA 3723 DEL 25/07/1985 NOTARIA 10 DE CALI VALOR ACTO: $0
 - Inmueble: `APARTAMENTO 105`
 - EP: `ESCRITURA 3723 DEL 25/07/1985`
 
-### 28. Múltiples Folios Compartiendo la Misma Anotación (Validar Caché)
+### 29. Múltiples Folios Compartiendo la Misma Anotación (Validar Caché)
 ```
 3 -> 190172 : TORRE 9 - APARTAMENTO 103
 3 -> 190175 : TORRE 9 - APARTAMENTO 104
@@ -257,7 +268,7 @@ Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,35
 - Todos los folios deben tener la misma escritura en EP: `ESCRITURA 4067 DEL 16-09-2022`
 - **Nota:** La escritura debe buscarse solo una vez y reutilizarse para todos los folios con la misma anotación (caché).
 
-### 29. Caso donde No se Encuentra la Anotación
+### 30. Caso donde No se Encuentra la Anotación
 ```
 99 -> 999999 : APARTAMENTO 999
 ```
@@ -269,7 +280,7 @@ Doc: ESCRITURA 4067 DEL 16-09-2022 NOTARIA SEPTIMA DE IBAGUE VALOR ACTO: $574,35
 - Inmueble: `APARTAMENTO 999`
 - EP: `` (string vacío)
 
-### 30. Caso donde la Anotación Existe pero No Tiene Escritura
+### 31. Caso donde la Anotación Existe pero No Tiene Escritura
 ```
 5 -> 190177 : APARTAMENTO 106
 ```
@@ -283,7 +294,7 @@ ESPECIFICACION: OTRO: 999 ACLARACION
 - Inmueble: `APARTAMENTO 106`
 - EP: `` (string vacío)
 
-### 31. Extracción de Escritura con Formato Completo
+### 32. Extracción de Escritura con Formato Completo
 ```
 1 -> 190178 : APARTAMENTO 107
 ```
